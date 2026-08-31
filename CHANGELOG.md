@@ -13,6 +13,12 @@ See `docs/llm-wiki/release.md`.
 
 ## [Unreleased]
 
+### Added
+- Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
+
+**中文 · 新增**
+- 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
+
 ### Fixed
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
 - Thinking no longer stays on screen as the final reply. The real answer paints in place; switching chats is not required (#968).

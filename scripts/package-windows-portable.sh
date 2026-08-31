@@ -10,7 +10,10 @@ TAG="${1:-${TAG:-}}"
 if [[ -z "$TAG" ]]; then
   TAG="v$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
 fi
-VER="${TAG#v}"
+# Nightly CI uploads to a rolling tag while keeping versioned zip names.
+#   UPLOAD_TAG=nightly VER=0.2.29 bash scripts/package-windows-portable.sh v0.2.29
+UPLOAD_TAG="${UPLOAD_TAG:-$TAG}"
+VER="${VER:-${TAG#v}}"
 
 # Tauri productName is "Grok" but Cargo package name may produce grok-app.exe.
 find_release_exe() {
@@ -79,8 +82,8 @@ else
 fi
 ls -lah "$OUT"
 if command -v gh >/dev/null 2>&1 && [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
-  gh release upload "$TAG" "$OUT" --clobber
-  echo "uploaded $OUT to $TAG"
+  gh release upload "$UPLOAD_TAG" "$OUT" --clobber
+  echo "uploaded $OUT to $UPLOAD_TAG"
 else
   echo "skip upload (gh/token missing); artifact at $OUT"
 fi

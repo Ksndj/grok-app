@@ -180,6 +180,7 @@ git push origin vX.Y.Z
 | 工作流 | 触发 | 作用 |
 |--------|------|------|
 | `.github/workflows/ci.yml` | push/PR → main | typecheck、test、`build:ui`、mac/win `cargo test` |
+| `.github/workflows/main-installers.yml` | push → main（应用路径）或手动 | 矩阵：mac×2 + win（setup+portable）+ linux → 滚动 **prerelease** `nightly`（`--latest=false`，不抢正式 latest；**不开** updater / 官网别名） |
 | `.github/workflows/release.yml` | tag `v*` 或手动 | 矩阵：mac×2 + win（setup+portable）+ linux（AppImage/deb/rpm）→ 同一 Release |
 
 Release job 关键：
@@ -195,6 +196,8 @@ GitHub → **Settings → Actions → General → Workflow permissions**
 → **Read and write permissions**（否则无法创建/更新 Release）。
 
 未配置完整 `APPLE_CERTIFICATE` + App Store Connect API secrets 时 macOS 包**未公证**，属预期；README 保留 `xattr` 说明。Secrets 齐且 `release.yml` 已接线后，正式 tag 会 codesign + notarize。**v0.2.19** 是第一个公证成功的正式版；README 已改成「官方 Release 已公证，`xattr` 仅留给 fork / 旧包」。
+
+`main-installers.yml` 共用同一套 `APPLE_*` / `WINDOWS_*` secrets。缺省仍出包（未签名）。**禁止**把 nightly 当 grok-app.com 下载源，也**禁止**在 nightly 构建里注入 `GROK_UPDATER_*`（会把非正式包编进自动更新通道）。
 
 ## 官网下载契约（grok-app.com）
 
@@ -275,6 +278,7 @@ pnpm build:win   # tauri + cargo-xwin + makensis
 | `scripts/changelog-for-release.py` | Release body = 该版本 CHANGELOG 章节（精简） |
 | `scripts/release-tag.sh` | bump + tag |
 | `.github/workflows/release.yml` | 三端构建与上传 |
+| `.github/workflows/main-installers.yml` | `main` 滚动签名安装包 → prerelease `nightly` |
 | `scripts/publish-website-downloads.py` | 官网稳定别名 + `downloads.json` |
 | [website-downloads.md](./website-downloads.md) | 官网下载对接契约（完整） |
 | `docs/BUILD.md` | 本地构建细节 |

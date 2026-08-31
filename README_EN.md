@@ -288,7 +288,7 @@ pnpm build
 
 `pnpm dev` merges `src-tauri/tauri.dev.conf.json` (`identifier` `com.grokapp.desktop.dev`, product **Grok Dev**) so it can run beside installed **Grok**. Sessions still share App data unless `GROK_APP_HOME` is set. Bare `tauri dev` without `--config` uses the official identifier and will steal the installed instance.
 
-Windows (optional): double-click [`install-latest.cmd`](./install-latest.cmd) to fast-forward `origin/main` and silently install an unsigned side-by-side **grok-app-latest** (does not replace official **Grok**). Needs VS Build Tools + Rust MSVC; details in [docs/BUILD.md](./docs/BUILD.md).
+Windows (optional): double-click [`install-latest.cmd`](./install-latest.cmd) to fast-forward `origin/main` and silently install an unsigned side-by-side **grok-app-latest** (does not replace official **Grok**). Needs VS Build Tools + Rust MSVC; details in [docs/BUILD.md](./docs/BUILD.md). CI also publishes a rolling **nightly** prerelease when `main` updates (signed if Apple / Windows secrets are set); it is not GitHub “latest”.
 
 For cross-compilation and packaging instructions, see [docs/BUILD.md](./docs/BUILD.md).
 

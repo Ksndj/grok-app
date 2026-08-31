@@ -18,6 +18,7 @@
 不要链到：
 
 - `grok-desktop-latest`（应用内静默更新：`.app.tar.gz` / `latest.json`）
+- `nightly`（`main` 滚动预发布，不是稳定版；见 `.github/workflows/main-installers.yml`）
 - `*.sig`、`SHA256SUMS` 以外的校验旁路文件当「下载 App」
 - `latest.json`（给 Tauri updater，不是给人点的）
 

@@ -145,7 +145,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/install-latest.ps1
 - **不覆盖** 正式 **Grok** 安装目录；开始菜单多一项 `grok-app-latest`
 - 会话/设置仍走同一套 App data（`%APPDATA%\grokapp\grok-app`，可用 `GROK_APP_HOME` 覆盖）——不要和正式版同时当写入端开着
 - 本机 NSIS 仍会注册 `grok://` / `.grokskin`（后装的覆盖系统关联）
-- 不是 nightly CI；没有 macOS / Linux 对等脚本
+- 本机脚本不是 GitHub CI。等不及本地编译时，用仓库滚动预发布 **[nightly](https://github.com/RongleCat/grok-app/releases/tag/nightly)**（fork 则换成自己的 `owner/repo`）
 
 `origin` 应指向你想跟上的 GitHub 仓库（贡献者通常是 `RongleCat/grok-app`）。
 
@@ -228,6 +228,26 @@ cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/* dist-installer
 - 可选 `--push` 触发 CI
 
 没有对应 CHANGELOG 章节时，**tag 与 CI release 都会失败**（有意为之）。
+
+### `main` 自动签名安装包（滚动 nightly）
+
+每次合入 `main`（应用代码路径）或手动 **Actions → main-installers → Run workflow**，`.github/workflows/main-installers.yml` 会打与正式版相同的四端安装包，上传到滚动 **prerelease** tag `nightly`：
+
+- **不是** GitHub “latest”（`--latest=false`），官网 / `/releases/latest/download/` 仍指向正式 `v*` tag
+- **不** 写 `grok-desktop-latest` / `latest.json`（nightly 包不得进入应用内静默更新）
+- **不** 要求 `CHANGELOG.md` 已有 `## [X.Y.Z]`
+- 签名 secrets **与正式 release 相同**（`APPLE_*` / `WINDOWS_CERTIFICATE*`）；未配置仍出包，只是未签名
+- 新 run 会清空旧 `nightly` 资产再上传；并发用 `cancel-in-progress`
+
+Windows 自签证书（本地 `certificate/*.pfx`，**不要提交 git**）要给 CI 用时，加到仓库 **Settings → Secrets and variables → Actions**：
+
+```powershell
+# WINDOWS_CERTIFICATE = PFX 的单行 base64
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\certificate\grok-app-local.pfx"))
+# WINDOWS_CERTIFICATE_PASSWORD = 导出 PFX 时的密码
+```
+
+自签只能让「发布者」显示证书 CN，**不能**消除 SmartScreen；正式用户仍应使用 OV/EV 或 GitHub `v*` Release。
 
 ### 仓库设置
 

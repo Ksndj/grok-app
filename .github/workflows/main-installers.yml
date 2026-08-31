@@ -1,0 +1,305 @@
+# Build signed desktop installers from main and publish a rolling prerelease.
+#   macOS ARM / Intel (.dmg)
+#   Windows x64 NSIS setup + portable zip
+#   Linux x64 AppImage / .deb / .rpm
+#
+# Trigger: push to main (app paths) or manual workflow_dispatch.
+# Tag:     `nightly` (prerelease, --latest=false — official v* stays GitHub latest)
+#
+# This is NOT the stable release pipeline. Do not:
+#   - enable Tauri updater / grok-desktop-latest
+#   - write website downloads.json / stable aliases
+#   - require a CHANGELOG ## [X.Y.Z] section
+#
+# Signing secrets (same names as release.yml; omit entirely to ship unsigned):
+#   Apple (all required together):
+#     APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
+#     APPLE_TEAM_ID  + optional notarize: APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8
+#   Windows Authenticode:
+#     WINDOWS_CERTIFICATE            base64-encoded .pfx
+#     WINDOWS_CERTIFICATE_PASSWORD   export password
+# Do NOT create empty APPLE_* / WINDOWS_* secrets.
+#
+# Repo Settings → Actions → General → Workflow permissions:
+#   Read and write permissions (create/update the nightly Release).
+name: main-installers
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/main-installers.yml"
+      - "scripts/**"
+      - "src/**"
+      - "src-tauri/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - "tsconfig*.json"
+  workflow_dispatch:
+
+concurrency:
+  group: main-installers
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    name: Prepare nightly prerelease
+    outputs:
+      tag: nightly
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+
+      - name: Create or refresh nightly prerelease
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash scripts/prepare-nightly-release.sh
+          VER="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+            name: macOS-ARM64
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+            name: macOS-x64
+          - platform: windows-latest
+            args: ""
+            name: Windows-x64
+          - platform: ubuntu-22.04
+            args: ""
+            name: Linux-x64
+
+    runs-on: ${{ matrix.platform }}
+    name: Build ${{ matrix.name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Linux system deps (WebKit / GTK / RPM)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          # Use Ayatana only — libappindicator3-dev conflicts with libayatana-appindicator3-dev.
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            rpm \
+            file
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          shared-key: nightly-${{ matrix.name }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Windows Authenticode (optional). Same import path as release.yml.
+      # Without secrets the build stays unsigned (SmartScreen "Unknown publisher").
+      - name: Import Windows code signing certificate
+        id: win_sign
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE)) {
+            Write-Host "WINDOWS_CERTIFICATE not set — Windows build will be unsigned"
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            return
+          }
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            Write-Error "WINDOWS_CERTIFICATE set but WINDOWS_CERTIFICATE_PASSWORD is empty"
+            exit 1
+          }
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          [IO.File]::WriteAllBytes("$pwd/certificate/certificate.pfx", $bytes)
+          $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          $imported = @(Import-PfxCertificate -FilePath "$pwd/certificate/certificate.pfx" `
+            -CertStoreLocation Cert:\CurrentUser\My -Password $secure)
+          $withKey = @($imported | Where-Object { $_.HasPrivateKey })
+          $code = @($withKey | Where-Object {
+            -not $_.EnhancedKeyUsageList -or
+            ($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -contains 'Code Signing'
+          }) | Select-Object -First 1
+          if (-not $code) { $code = $withKey | Select-Object -First 1 }
+          if (-not $code) {
+            Write-Error "No certificate with private key found in WINDOWS_CERTIFICATE PFX"
+            exit 1
+          }
+          $thumb = [string]$code.Thumbprint
+          if ($thumb -notmatch '^[0-9A-Fa-f]{40}$') {
+            Write-Error "Unexpected certificate thumbprint format: $thumb"
+            exit 1
+          }
+          Write-Host "Imported Windows code signing cert thumbprint=$thumb"
+          $cfg = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $thumb
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 6
+          Set-Content -Path "src-tauri/tauri.windows.sign.conf.json" -Value $cfg -Encoding utf8
+          Remove-Item -Recurse -Force certificate -ErrorAction SilentlyContinue
+          "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Export Apple signing env
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_CERTIFICATE:-}" ]]; then
+            echo "APPLE_CERTIFICATE not set — macOS build will be unsigned"
+            exit 0
+          fi
+          if [[ -z "${APPLE_CERTIFICATE_PASSWORD:-}" || -z "${APPLE_SIGNING_IDENTITY:-}" || -z "${APPLE_TEAM_ID:-}" ]]; then
+            echo "::error::APPLE_CERTIFICATE is set but APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY / APPLE_TEAM_ID is empty"
+            exit 1
+          fi
+          {
+            echo "APPLE_CERTIFICATE<<GROKAPP_EOF"
+            printf '%s\n' "$APPLE_CERTIFICATE"
+            echo "GROKAPP_EOF"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+          } >> "$GITHUB_ENV"
+          if [[ -n "${APPLE_API_KEY_P8:-}" ]]; then
+            if [[ -z "${APPLE_API_ISSUER:-}" || -z "${APPLE_API_KEY:-}" ]]; then
+              echo "::error::APPLE_API_KEY_P8 is set but APPLE_API_ISSUER / APPLE_API_KEY is empty"
+              exit 1
+            fi
+            mkdir -p "$RUNNER_TEMP/apple-signing"
+            printf '%s\n' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple-signing/AuthKey.p8"
+            chmod 600 "$RUNNER_TEMP/apple-signing/AuthKey.p8"
+            {
+              echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple-signing/AuthKey.p8"
+              echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+              echo "APPLE_API_KEY=$APPLE_API_KEY"
+            } >> "$GITHUB_ENV"
+            echo "Apple signing + App Store Connect API key enabled"
+          else
+            echo "Apple certificate present but no APPLE_API_KEY_P8 — will sign without notarizing"
+          fi
+
+      - name: Build Tauri app & attach to nightly prerelease
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          tagName: nightly
+          releaseName: "Grok App nightly"
+          releaseBody: ${{ format('Rolling prerelease from main (package {0}). GitHub latest stays on official v* tags. Signed when Apple / Windows secrets are set.', needs.prepare.outputs.version) }}
+          releaseDraft: false
+          prerelease: true
+          args: >-
+            ${{ matrix.args }}
+            ${{ matrix.platform == 'windows-latest' && steps.win_sign.outputs.enabled == 'true' && ' --config src-tauri/tauri.windows.sign.conf.json' || '' }}
+          includeUpdaterJson: false
+
+      - name: Windows portable zip (绿色版)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPLOAD_TAG: nightly
+          VER: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash scripts/package-windows-portable.sh "v${VER}"
+
+  checksums:
+    needs: [prepare, publish]
+    if: ${{ always() && !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-22.04
+    name: Publish SHA256SUMS
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+
+      - name: Restore nightly notes (not GitHub latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIGHTLY_NOTES_ONLY: "1"
+        run: bash scripts/prepare-nightly-release.sh
+
+      - name: Compute and upload SHA256SUMS
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: nightly
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nightly-assets
+          cd /tmp/nightly-assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*' || true
+          rm -f SHA256SUMS
+          shopt -s nullglob
+          files=(*)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "error: no nightly assets found for $TAG" >&2
+            exit 1
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
