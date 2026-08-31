@@ -30,7 +30,11 @@ import type { ConnPill } from "@/lib/connStatus";
 import { isMirrorClient, mirrorToken } from "@/lib/mirrorTransport";
 import { deriveMirrorClientLinkStatus } from "@/lib/mirrorStatus";
 import { applySideContextOpen } from "@/lib/sideContextOpen";
-import { openSideTab, type SideWorkbenchState } from "@/lib/sideWorkbench";
+import {
+  envJumpOpensReview,
+  openSideTab,
+  type SideWorkbenchState,
+} from "@/lib/sideWorkbench";
 import type { SessionChangesSummary } from "@/lib/sessionChanges";
 import type { GitDirtySummary } from "@/lib/workspaceGit";
 
@@ -400,11 +404,14 @@ export function WorkbenchMain(props: WorkbenchMainProps) {
                           : null
                   }
                   onJump={(jump) => {
-                    if (jump.type === "review") {
+                    if (envJumpOpensReview(jump.type)) {
+                      // Env already gated on its live gitStatus snapshot
+                      // (`gitReady`). Re-checking the workbench one-shot flag
+                      // toasts "not a git project" and the menu just closes.
                       const result = applySideContextOpen(
                         sideWorkbench,
                         { type: "changes" },
-                        { isGitProject: sideIsGitProject },
+                        { isGitProject: true },
                       );
                       if (result.noticeKey) {
                         showToast(tr(result.noticeKey), 2400);

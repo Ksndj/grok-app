@@ -747,3 +747,16 @@ export function resolveSideTabLabel(
 export function envReviewJumpEnabled(isGitProject: boolean): boolean {
   return !!isGitProject;
 }
+
+/** Env menu jump kinds (display-only; no checkout/push writes). */
+export type EnvInfoJumpType = "review" | "local" | "branch" | "push" | "pr";
+
+/**
+ * Git-context env rows open the Review side tab (Codex-style).
+ * Local opens Files. The env menu already gated git via its own snapshot —
+ * do not re-gate on a stale one-shot `sideIsGitProject` or the dropdown
+ * just closes and nothing opens.
+ */
+export function envJumpOpensReview(type: EnvInfoJumpType): boolean {
+  return type === "review" || type === "branch" || type === "push" || type === "pr";
+}
