@@ -1312,26 +1312,6 @@ export function AppWorkbench() {
   /** Effective agent / resource root: bound project, else general workspace dir. */
   const effectiveProjectPath =
     activeProject?.path?.trim() || generalWorkspacePath || null;
-  /** Probe git so Side Workbench Review entry is gated. */
-  useEffect(() => {
-    const path = effectiveProjectPath?.trim();
-    if (!path) {
-      setSideIsGitProject(false);
-      return;
-    }
-    let cancelled = false;
-    void api
-      .gitStatus(path)
-      .then((r) => {
-        if (!cancelled) setSideIsGitProject(!!r?.available);
-      })
-      .catch(() => {
-        if (!cancelled) setSideIsGitProject(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveProjectPath]);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   /** Avoid writing collapse prefs before settings hydrate on launch. */
   const expandedProjectsHydratedRef = useRef(false);
@@ -10347,21 +10327,26 @@ export function AppWorkbench() {
   }, [gitWorktreesAvailable, refreshCliWorktrees]);
 
   /**
-   * Poll workspace git status for the active project so the composer dirty chip
-   * stays current (hide when clean / not a repo). Soft-fail; no toast spam.
+   * Poll workspace git status for the effective project path so the composer
+   * dirty chip stays current and Review stays gated on a live `available`
+   * flag (a one-shot probe at bind time can fail, then never retry — env
+   * menu then shows git while 变更 toast-closes as "not a git project").
+   * Soft-fail; no toast spam.
    */
   const gitDirtyReqRef = useRef(0);
   const refreshGitDirtyStatus = useCallback(async () => {
-    const path = activeProject?.path?.trim() || null;
+    const path = effectiveProjectPath?.trim() || null;
     if (!path || !api.isTauri()) {
       gitDirtyReqRef.current += 1;
       setGitDirtySummary((prev) => (prev == null ? prev : null));
+      setSideIsGitProject(false);
       return;
     }
     const reqId = ++gitDirtyReqRef.current;
     try {
       const status = await api.gitStatus(path);
       if (reqId !== gitDirtyReqRef.current) return;
+      setSideIsGitProject(!!status?.available);
       const next = summarizeGitDirty(status);
       setGitDirtySummary((prev) =>
         gitDirtySummariesEqual(prev, next) ? prev : next,
@@ -10373,13 +10358,13 @@ export function AppWorkbench() {
       if (reqId !== gitDirtyReqRef.current) return;
       setGitDirtySummary((prev) => (prev == null ? prev : null));
     }
-  }, [activeProject?.path]);
+  }, [effectiveProjectPath]);
 
   useEffect(() => {
     void refreshGitDirtyStatus();
     // Soft poll while a project is bound; refresh sooner on focus.
     // Faster while a turn is live — agent may `git switch` mid-session.
-    const path = activeProject?.path?.trim() || null;
+    const path = effectiveProjectPath?.trim() || null;
     if (!path || !api.isTauri()) return;
     const busy =
       session.state === "streaming" || session.state === "awaiting_permission";
@@ -10401,7 +10386,7 @@ export function AppWorkbench() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [
-    activeProject?.path,
+    effectiveProjectPath,
     refreshGitDirtyStatus,
     session.sessionId,
     session.state,

@@ -23,6 +23,7 @@ import {
   toggleSideExpanded,
   activeSideTab,
   envReviewJumpEnabled,
+  envJumpOpensReview,
   isSideTabNameKey,
   isPlaceholderFileTab,
   resolveSideTabLabel,
@@ -364,6 +365,16 @@ describe("envReviewJumpEnabled", () => {
   it("is git-only (non-git never jumps to review)", () => {
     expect(envReviewJumpEnabled(false)).toBe(false);
     expect(envReviewJumpEnabled(true)).toBe(true);
+  });
+});
+
+describe("envJumpOpensReview", () => {
+  it("opens Review for git-context env rows; Files for local", () => {
+    expect(envJumpOpensReview("review")).toBe(true);
+    expect(envJumpOpensReview("branch")).toBe(true);
+    expect(envJumpOpensReview("push")).toBe(true);
+    expect(envJumpOpensReview("pr")).toBe(true);
+    expect(envJumpOpensReview("local")).toBe(false);
   });
 });
 

@@ -24,4 +24,9 @@ describe("EnvInfoButton pin / dock", () => {
     expect(src).toContain("setParked(true)");
     expect(src).toContain("is-parked");
   });
+
+  it("enables review jump from the live git snapshot, not only the parent flag", () => {
+    expect(src).toContain("const gitReady = snap.isGit || isGitProject");
+    expect(src).toContain("envReviewJumpEnabled(gitReady)");
+  });
 });
