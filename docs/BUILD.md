@@ -231,6 +231,9 @@ cp src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/* dist-installer
 
 ### `main` 自动签名安装包（滚动 nightly）
 
+> **Fork 本地 / Not for upstream（不贡献）** — 本节描述的滚动 nightly 自签名安装包管线（`.github/workflows/main-installers.yml`、`scripts/prepare-nightly-release.sh` 及本 fork 相关接线）仅存在于 Ksndj/grok-app，**不要**写入对上游 RongleCat/grok-app 的 PR。  
+> This nightly self-signed packaging path is **fork-only — do not include in upstream PRs**.
+
 每次合入 `main`（应用代码路径）或手动 **Actions → main-installers → Run workflow**，`.github/workflows/main-installers.yml` 会打与正式版相同的四端安装包，上传到滚动 **prerelease** tag `nightly`：
 
 - **不是** GitHub “latest”（`--latest=false`），官网 / `/releases/latest/download/` 仍指向正式 `v*` tag

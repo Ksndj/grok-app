@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# *** Fork-local / 不贡献 ***
+# This script exists only on the Ksndj/grok-app fork.
+# Do NOT propose, copy, or include it in PRs to upstream RongleCat/grok-app.
+# 本脚本仅本 fork 使用；勿向上游 RongleCat/grok-app 提 PR 或包含此文件。
+#
 # Create or refresh the rolling GitHub prerelease `nightly` for main-branch
 # installers. Does not become GitHub "latest" (official v* releases stay latest).
 #

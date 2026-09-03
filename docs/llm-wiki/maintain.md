@@ -91,6 +91,7 @@ New Issue
 - [ ] No OS-default select/menu chrome; no bare transparent `.menu-panel`; overlays use project components + solid/glass surface (see [dialogs.md](./dialogs.md))  
 - [ ] No secrets, `auth.json`, local agent homes  
 - [ ] Scope matches description; no drive-by refactors  
+- [ ] **Fork-only / 不贡献**: never open upstream PRs to RongleCat/grok-app that add the nightly self-signed installer pipeline (`.github/workflows/main-installers.yml`, `scripts/prepare-nightly-release.sh`, related docs)
 
 **Agents:** if the user asked for a PR, run the list above locally first. Do not open a PR or hand over a compare URL while it is red.
 

@@ -28,6 +28,7 @@
    - Do not hand-edit Release notes only on GitHub; change the script + CHANGELOG.  
    - **What's New popup / CHANGELOG copy**: popup shows **one short sentence per bullet** (added / fixed / improved — no paths, no implementation, no issue piles). **First sentence ≤ 90 characters** (`src/lib/whatsNew.test.ts`). CHANGELOG may add **at most one extra sentence**. Do **not** rewrite already-shipped `## [X.Y.Z]` sections. Details: [release.md](docs/llm-wiki/release.md).  
    - **Contributors**: every release refresh circular-avatar galleries via `python3 scripts/update-contributors.py` (README.md / README_EN.md / README_ZH.md / README_RU.md markers). No square table + contrib.rocks dual track.
+   - **Fork-only / 不贡献**: the nightly self-signed installer pipeline (`.github/workflows/main-installers.yml`, `scripts/prepare-nightly-release.sh`, related docs) is Ksndj/grok-app only — **never** open upstream PRs to RongleCat/grok-app that add it.
 
 1c. **Open-source surface** — public docs: `README.md` / `README_EN.md`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`. Do not commit secrets, `auth.json`, or local agent homes.
 

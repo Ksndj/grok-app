@@ -65,6 +65,18 @@ Default is the real **Grok Build** CLI (`grok agent stdio`).
 - X: [@cgnot996](https://x.com/cgnot996)
 - GitHub Issues: https://github.com/RongleCat/grok-app/issues
 
+## Fork 本地 / Not for upstream
+
+本 fork（Ksndj/grok-app）的 **自签名 / 滚动 nightly 安装包** 管线仅供本仓库使用，**不贡献**给上游 [RongleCat/grok-app](https://github.com/RongleCat/grok-app)。向 upstream 开 PR 时请排除下列路径及相关接线，勿一并提交：
+
+This fork’s **self-signed / rolling nightly installer** pipeline is **fork-only — do not include in upstream PRs to RongleCat/grok-app**. When opening a PR upstream, exclude:
+
+- `.github/workflows/main-installers.yml`
+- `scripts/prepare-nightly-release.sh`
+- related nightly / self-signed installer docs and packaging wiring for this fork（如 `docs/BUILD.md` 中对应小节、nightly 文案等）
+
+正式 `v*` 发版流程（`release.yml` / `release-tag.sh`）仍按上游约定；仅 nightly 自签路径为 fork 本地。
+
 ## Releases
 
 Full process for humans and AI maintainers: **[docs/llm-wiki/release.md](./docs/llm-wiki/release.md)**.
