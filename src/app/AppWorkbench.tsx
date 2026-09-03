@@ -40,7 +40,7 @@ import {
 } from "@/lib/appPlatform";
 import {
   isFileDrag,
-  pathsFromDroppedFiles,
+  pathsFromDataTransfer,
   shouldSkipHtml5AfterNative,
 } from "@/lib/fileDrop";
 import { writeOpenTargetStorage } from "@/lib/openEditorHonesty";
@@ -190,6 +190,7 @@ import {
 import {
   armStopLatch,
   createStopLatchState,
+  settleStopLatchAfterSessionStop,
   tickStopLatch,
   STOP_LATCH_MS,
 } from "@/lib/stopLatch";
@@ -198,7 +199,10 @@ import {
   shouldEscapeCloseSettings,
   shouldEscapeStopGeneration,
 } from "@/lib/escapeStop";
-import { endOfTurnMarkerContent } from "@/lib/endOfTurn";
+import {
+  currentTurnHasEndMarker,
+  endOfTurnMarkerContent,
+} from "@/lib/endOfTurn";
 import {
   isMirrorClient,
   mirrorEnsureTransport,
@@ -434,6 +438,7 @@ import {
 import {
   makeQueuedSend,
   queueSessionKey,
+  releaseSendClaimsOnUserStop,
   resolveSendQueueStripState,
   type QueuedSend,
 } from "@/lib/sendQueue";
@@ -606,6 +611,7 @@ import {
   summarizeGitDirty,
   type GitDirtySummary,
 } from "@/lib/workspaceGit";
+import { startVisibilityPoll } from "@/lib/visibilityPoll";
 
 const AutomationsPage = lazy(async () => {
   const m = await import("@/components/AutomationsPage");
@@ -5872,6 +5878,12 @@ export function AppWorkbench() {
     executeSendFromQueueRef,
     executeSendLatestRef,
     claimSendForSession,
+    clearStopLatch: () => {
+      if (stopLatchRef.current.phase === "idle") return;
+      const cleared = createStopLatchState();
+      stopLatchRef.current = cleared;
+      setStopLatch(cleared);
+    },
     currentViewFocus,
     patchSessionMessages,
     ensureConnected,
@@ -6418,9 +6430,11 @@ export function AppWorkbench() {
     platform,
   ]);
 
-  // HTML5 fallback. Windows sets dragDropEnabled:false so WebView2 actually
-  // delivers File blobs (Tauri's native handler otherwise swallows Explorer
-  // drops). Capture phase so contenteditable cannot cancel the drop.
+  // HTML5 fallback when Tauri does not own the drop (or for path-bearing
+  // WebView File / uri-list payloads). Capture phase so contenteditable
+  // cannot cancel the drop. Windows keeps dragDropEnabled on so Explorer
+  // folder→project gets absolute paths via onDragDropEvent (#999); this
+  // path must not silently no-op on the sidebar when paths are missing.
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       if (!isFileDrag(e.dataTransfer)) {
@@ -6459,18 +6473,22 @@ export function AppWorkbench() {
       const files = e.dataTransfer?.files?.length
         ? Array.from(e.dataTransfer.files)
         : [];
-      const paths = pathsFromDroppedFiles(files);
+      const paths = pathsFromDataTransfer(e.dataTransfer);
       const zone = hitDragZone(e.clientX, e.clientY);
       if (paths.length) {
         if (zone === "sidebar") void addProjectsFromPaths(paths);
         else void addAttachmentsFromPaths(paths);
         return;
       }
-      // Path-less File list (Windows Explorer after dragDropEnabled:false,
-      // or an image dragged from another app).
-      if (zone !== "sidebar" && files.length) {
+      // Path-less File list (cross-app image drag, or engines without File.path).
+      // Sidebar needs a real folder path — never silent-no-op (#999).
+      if (zone === "sidebar") {
+        setLocalError(tr("composer.dropProjectNeedPath"));
+        return;
+      }
+      if (files.length) {
         void addAttachmentsFromFiles(files);
-      } else if (!files.length) {
+      } else {
         setLocalError(tr("attach.droppedNone"));
       }
     };
@@ -10037,17 +10055,9 @@ export function AppWorkbench() {
         m.map((x) => ({ ...x, streaming: false })),
       );
       patchSessionMessages(id, (prev) => {
-        if (
-          prev.some(
-            (x) =>
-              x.marker === "turn_end" ||
-              x.marker === "turn_cancelled" ||
-              x.content?.startsWith("turn_end|") ||
-              x.content?.startsWith("turn_cancelled|"),
-          )
-        ) {
-          return prev;
-        }
+        // Only the *current* turn — a prior stop chip must not block this one,
+        // and Host `turn_marker` must not twin a local chip already painted.
+        if (currentTurnHasEndMarker(prev)) return prev;
         return applyTurnMarker(prev, {
           sessionId: id,
           messageId: `end-stop-${reason}-${Date.now()}`,
@@ -10064,6 +10074,18 @@ export function AppWorkbench() {
     // Optimistic unlock: sticky "thinking" + wedged cancel used to keep the
     // UI busy until `sessionStop` returned (or forever on Host hang).
     forceUnlockLocal(sid, "force");
+    // Free the send claim immediately. Otherwise a hung ensureConnected /
+    // sessionSend keeps claimSendForSession false and the next Send no-ops
+    // while the button still looks enabled (Tip still says 发送).
+    {
+      const freed = releaseSendClaimsOnUserStop(
+        sendInFlightBySessionRef.current,
+        sendEpochBySessionRef.current,
+        sid,
+      );
+      sendInFlightRef.current = freed.inFlight;
+      sendEpochRef.current += 1;
+    }
 
     let timeoutSettledSessionId: string | null = sid;
     // Force-unlock again if Host stays busy past STOP_LATCH_MS.
@@ -10111,16 +10133,19 @@ export function AppWorkbench() {
           m.map((x) => ({ ...x, streaming: false })),
         );
       }
-      const cleared = createStopLatchState();
-      stopLatchRef.current = cleared;
-      setStopLatch(cleared);
+      // sessionStop often returns before Host leaves streaming. Keep force_idle
+      // until a Host ready event clears the latch — do not trust the optimistic
+      // local Ready map (that used to drop the latch and re-lock Send).
+      const settled = settleStopLatchAfterSessionStop(stopLatchRef.current);
+      stopLatchRef.current = settled;
+      setStopLatch(settled);
     } catch (e) {
       // Host stop can fail ("no active session") while UI still shows thinking.
       // Always finish local unlock so Stop never leaves a dead busy shell.
       forceUnlockLocal(sid || liveHostRef.current.sessionId, "force");
-      const cleared = createStopLatchState();
-      stopLatchRef.current = cleared;
-      setStopLatch(cleared);
+      const settled = settleStopLatchAfterSessionStop(stopLatchRef.current);
+      stopLatchRef.current = settled;
+      setStopLatch(settled);
       setLocalError(String(e));
     }
   };
@@ -10364,26 +10389,24 @@ export function AppWorkbench() {
     void refreshGitDirtyStatus();
     // Soft poll while a project is bound; refresh sooner on focus.
     // Faster while a turn is live — agent may `git switch` mid-session.
+    // Ticks pause while the window is hidden — a minimized app has nothing
+    // to paint, and `git status` is a process spawn per poll.
     const path = effectiveProjectPath?.trim() || null;
     if (!path || !api.isTauri()) return;
     const busy =
       session.state === "streaming" || session.state === "awaiting_permission";
     const intervalMs = busy ? 2000 : 8000;
-    const id = window.setInterval(() => {
-      void refreshGitDirtyStatus();
-    }, intervalMs);
+    const poll = startVisibilityPoll({
+      tick: () => void refreshGitDirtyStatus(),
+      setIntervalFn: (handler) => window.setInterval(handler, intervalMs),
+    });
     const onFocus = () => {
       void refreshGitDirtyStatus();
     };
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") onFocus();
-    };
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.clearInterval(id);
+      poll.dispose();
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [
     effectiveProjectPath,
@@ -13956,6 +13979,8 @@ export function AppWorkbench() {
           activeCustomProvider={activeCustomProvider}
           mainPane={mainPane}
           onOpenSearch={() => searchPalette.openBlank()}
+          sidebarToggleUnread={unreadSessionIds.size > 0}
+          onToggleSidebar={closeSidebarPane}
           onNewChat={() => void newChat(null)}
           onNavigateAutomations={navigateAutomations}
           onNavigateKanban={navigateKanban}

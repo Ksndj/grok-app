@@ -78,6 +78,7 @@ mod editors;
 mod error;
 
 mod extensions;
+mod plugin_mcp;
 mod mcp_oauth;
 
 mod fs_browser;
@@ -1362,6 +1363,10 @@ pub fn run() {
             commands::plugin_update,
 
             commands::plugin_validate,
+            commands::plugin_mcp_auth_status,
+            commands::plugin_mcp_auth_save_tokens,
+            commands::plugin_mcp_auth_oauth2,
+            commands::plugin_mcp_auth_logout,
 
             commands::hooks_list,
 
@@ -1857,7 +1862,7 @@ fn ns_app_is_active() -> bool {
 /// reaches the UI. `-[NSRunningApplication activateWithOptions:]` is the
 /// supported replacement and is honored in more launch paths.
 #[cfg(target_os = "macos")]
-fn force_ns_app_activate() {
+pub(crate) fn force_ns_app_activate() {
     use objc2::{class, msg_send, runtime::AnyObject};
     unsafe {
         // NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps
@@ -1870,7 +1875,7 @@ fn force_ns_app_activate() {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn force_ns_app_activate() {}
+pub(crate) fn force_ns_app_activate() {}
 
 /// Point the key window's first responder at the WKWebView so key events reach
 /// the DOM (web shortcuts like ⌘,). `makeKeyAndOrderFront` alone can leave the
@@ -1878,7 +1883,7 @@ fn force_ns_app_activate() {}
 /// every keystroke dies in the responder chain until one click focuses the
 /// web view. Idempotent; logs when it had to re-point.
 #[cfg(target_os = "macos")]
-fn point_keys_at_webview(win: &tauri::WebviewWindow) {
+pub(crate) fn point_keys_at_webview(win: &tauri::WebviewWindow) {
     use objc2::{class, msg_send, runtime::AnyObject};
     let (Ok(ns_win), Ok(ns_view)) = (win.ns_window(), win.ns_view()) else {
         return;
@@ -1896,7 +1901,7 @@ fn point_keys_at_webview(win: &tauri::WebviewWindow) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn point_keys_at_webview(_win: &tauri::WebviewWindow) {}
+pub(crate) fn point_keys_at_webview(_win: &tauri::WebviewWindow) {}
 
 /// Resolve AppSettings.theme (`system` | `light` | `dark`) to a concrete
 /// boot theme for the static shell and native chrome before React loads.

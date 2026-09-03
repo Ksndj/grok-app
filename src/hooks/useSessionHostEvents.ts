@@ -13,6 +13,7 @@ import {
   applyContextCompact,
   applyGeneratedImage,
   applyInterjection,
+  applyRemoteUserMessage,
   applyStreamChunk,
   applyToolEvent,
   applyTurnError,
@@ -50,7 +51,10 @@ import {
 import {
   reconcileSessionState,
 } from "@/lib/sessionPhase";
-import { createStopLatchState } from "@/lib/stopLatch";
+import {
+  createStopLatchState,
+  projectStateAfterUserStop,
+} from "@/lib/stopLatch";
 import {
   isTurnDoneReadyTransition,
   markUnread as markSessionUnread,
@@ -594,13 +598,29 @@ export function useSessionHostEvents(ctx: SessionHostEventsCtx) {
                 markSessionUnread(s.sessionId);
               }
             }
-            c.setLiveHost(s);
-            c.liveHostRef.current = s;
+            const stopLatch = c.stopLatchRef.current;
+            const heldState = projectStateAfterUserStop(
+              s.state,
+              stopLatch,
+              s.sessionId,
+            );
+            const heldStreamingMessageId =
+              heldState !== s.state ? null : s.streamingMessageId;
+            const heldSnapshot =
+              heldState === s.state
+                ? s
+                : {
+                    ...s,
+                    state: heldState,
+                    streamingMessageId: heldStreamingMessageId,
+                  };
+            c.setLiveHost(heldSnapshot);
+            c.liveHostRef.current = heldSnapshot;
             c.setLiveMap((prev) =>
               projectHostIntoLiveMap(prev, {
                 sessionId: s.sessionId,
-                state: s.state,
-                streamingMessageId: s.streamingMessageId,
+                state: heldState,
+                streamingMessageId: heldStreamingMessageId,
               }),
             );
             if (
@@ -644,11 +664,19 @@ export function useSessionHostEvents(ctx: SessionHostEventsCtx) {
               s.sessionId === c.viewingSessionIdRef.current
             ) {
               c.setSession((prev) => ({
-                ...s,
-                state: reconcileSessionState(s.state, prev.state),
+                ...heldSnapshot,
+                state: reconcileSessionState(s.state, prev.state, {
+                  stopLatch,
+                  sessionId: s.sessionId,
+                }),
               }));
-              // Clear retry chip / turn timer / stall banner when turn ends or errors out
-              if (s.state !== "streaming" && s.state !== "awaiting_permission") {
+              // Clear retry chip / turn timer / stall banner when turn ends or errors out.
+              // Use heldState so a Stop latch does not restart the clock on late
+              // Host "streaming" while the composer is already unlocked.
+              if (
+                heldState !== "streaming" &&
+                heldState !== "awaiting_permission"
+              ) {
                 // Drain coalesced stream/tool so final tokens land before streaming=false.
                 flushHostCoalescers();
                 c.setRetryStatus(null);
@@ -674,8 +702,8 @@ export function useSessionHostEvents(ctx: SessionHostEventsCtx) {
                   void c.tryApplyAutomationFromSession(s.sessionId);
                 }
               } else if (
-                s.state === "streaming" ||
-                s.state === "awaiting_permission"
+                heldState === "streaming" ||
+                heldState === "awaiting_permission"
               ) {
                 // Runs for background chats too — each keeps its own start, so
                 // returning to one mid-turn resumes instead of restarting.
@@ -727,13 +755,22 @@ export function useSessionHostEvents(ctx: SessionHostEventsCtx) {
                 markSessionUnread(s.sessionId);
               }
             }
-            c.setLiveMap((prev) =>
-              projectHostIntoLiveMap(prev, {
-                sessionId: s.sessionId,
-                state: s.state,
-                streamingMessageId: s.streamingMessageId,
-              }),
-            );
+            {
+              const stopLatch = c.stopLatchRef.current;
+              const heldState = projectStateAfterUserStop(
+                s.state,
+                stopLatch,
+                s.sessionId,
+              );
+              c.setLiveMap((prev) =>
+                projectHostIntoLiveMap(prev, {
+                  sessionId: s.sessionId,
+                  state: heldState,
+                  streamingMessageId:
+                    heldState !== s.state ? null : s.streamingMessageId,
+                }),
+              );
+            }
             // Background / demoted turn finished → unread + desktop notify.
             if (
               s.state === "ready" &&
@@ -756,11 +793,21 @@ export function useSessionHostEvents(ctx: SessionHostEventsCtx) {
             }
             // If user is viewing this demoted session, keep workbench state in sync.
             if (s.sessionId === c.viewingSessionIdRef.current) {
+              const stopLatch = c.stopLatchRef.current;
+              const heldState = projectStateAfterUserStop(
+                s.state,
+                stopLatch,
+                s.sessionId,
+              );
               c.setSession((prev) => ({
                 ...prev,
                 sessionId: s.sessionId,
-                state: reconcileSessionState(s.state, prev.state),
-                streamingMessageId: s.streamingMessageId,
+                state: reconcileSessionState(s.state, prev.state, {
+                  stopLatch,
+                  sessionId: s.sessionId,
+                }),
+                streamingMessageId:
+                  heldState !== s.state ? null : s.streamingMessageId,
                 lastError: s.lastError ?? prev.lastError,
                 title: s.title || prev.title,
               }));
@@ -1049,6 +1096,28 @@ export function useSessionHostEvents(ctx: SessionHostEventsCtx) {
             // Steering restarts the thinking episode for that chat — background
             // chats keep their own clock rather than borrowing the viewed one.
             c.restartTurnClock(payload.sessionId);
+          }),
+        );
+       track(
+          listenWithRetry<{
+            sessionId: string;
+            message: ChatMessage;
+            streamMessageId?: string | null;
+          }>("session://user_message", (payload) => {
+            if (cancelled || !payload?.sessionId || !payload.message?.id) {
+              return;
+            }
+            // Mirror / API / other-window sends: paint the Host user row when
+            // this client did not run local optimistic UI (#1001). Local sends
+            // reconcile optimistic `u-…` ids to the Host UUID instead of
+            // duplicating.
+            c.patchSessionMessages(payload.sessionId, (prev) =>
+              applyRemoteUserMessage(
+                prev,
+                payload.message,
+                payload.streamMessageId,
+              ),
+            );
           }),
         );
        track(

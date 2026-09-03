@@ -20,24 +20,70 @@ See `docs/llm-wiki/release.md`.
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
 
 ### Fixed
-- Expanded tool steps no longer stack title and command on one line. The last row in a Worked-for list keeps its real height.
+- Custom-model chats no longer switch models between turn 1 and turn 2. Picker `app_models` ids resolve to the same config section for spawn and reconnect (#1000).
+- Windows can add a project by dropping a folder on the sidebar again. Native drag-drop paths are restored; path-less sidebar drops show a clear hint instead of doing nothing (#999).
+- Chat no longer crashes mid-stream with React error #30 when a turn fails. Assistant timeline work no longer runs after early returns on the same row (#1002).
+- Phone mirror turns finish on the phone, and the desktop shows the phone’s message. Session stream/state events fan out to mirror clients again (#1001).
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
+
+**中文 · 修复**
+- 自定义模型会话不会再在第一轮与第二轮之间悄悄换模型。选择器里的 `app_models` id 会在启动与重连时解析成同一个配置段（#1000）。
+- Windows 又能把文件夹拖到侧栏加为项目。已恢复原生拖放路径；读不到路径时会提示，不再没反应（#999）。
+- 回合失败时聊天区不再因 React #30 崩溃。同一条助手消息不会在提前返回后再跑时间线 hooks（#1002）。
+- 手机镜像回合会在手机端正常结束，电脑也能看到手机发出的消息。会话流式/状态事件会再次同步到镜像客户端（#1001）。
+- 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+
+## [0.2.30] - 2026-09-02
+
+> **Highlight:** Install plugins from a local folder, and add X API from Recommended.
+>
+> **中文 · 亮点：** 设置里可从本地装插件，推荐里可一键加 X API。
+
+### Added
+- Settings can install a plugin from a local folder or git URL.
+- Installed plugins that ship MCP appear under Extensions → MCP.
+- X API is a recommended plugin you can install from Settings.
+- You can authorize the X API plugin from the MCP list.
+
+**中文 · 新增**
+- 设置 → 插件可以从本地文件夹或 git 安装。
+- 带 MCP 的已装插件会出现在扩展 → MCP。
+- 推荐插件里增加了 X API。
+- 可在 MCP 列表里给 X API 授权。
+
+### Changed
+- More UI languages fill in strings that still matched English. Remaining locales including Japanese, Korean, Russian, Ukrainian, and Tamil follow the locale (#972–#975, #977–#980).
+- Background git and worktree Host work stays off the async runtime. Status, diffs, review loads, and worktree ops no longer stall other commands (#988, #990–#993).
+- Opening a chat with media settles with fewer polls. Reveal still waits on load events; the safety net is slower (#989).
+
+**中文 · 变更**
+- 更多界面语言补上了原先还跟英文重复的可见文案。含日/韩/俄/乌/泰米尔等剩余语言跟语言走（#972–#975、#977–#980）。
+- 后台 git / worktree 更省。状态、diff、Review 与 worktree 操作不再堵其它 Host 命令（#988、#990–#993）。
+- 打开带媒体的会话少扫 DOM。仍靠加载事件揭开，兜底轮询更慢（#989）。
+
+### Fixed
+- Sidebar header is now one row: logo, search, and pane toggle. Search sits next to the toggle on the right (#996).
+- Desktop composer now shows localized labels for all reasoning tiers. The top tier no longer shows a raw internal id (#994).
+- Project chats no longer inherit the default-workspace sandbox. Writes inside the selected project work again (#986).
+- Expanded tool steps no longer stack title and command on one line. The last row in a Worked-for list keeps its real height (#983).
 - Thinking no longer stays on screen as the final reply. The real answer paints in place; switching chats is not required (#968).
 - Settings search finds Chinese keywords for permission, telemetry, login, and more. Bilingual keywords stay locked by catalog test (#970).
 - Queue edit and other glass dialogs stay above the embedded browser. Native webviews hide while the modal is open (#976).
+- Doctor and the agent dashboard no longer use native dropdowns. They use the same app Select as settings (#981).
+- Screen-reader labels for the files pane and setup steps follow the UI language. They no longer stay English (#982).
+- Wallpaper crop in the theme editor matches the main window.
 
 **中文 · 修复**
-- 展开的工具步骤不再把标题和命令叠在同一行。工作列表最后一行会按真实高度排开。
-- 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+- 桌面侧栏顶栏收成一行，搜索与侧栏按钮同在右侧。折叠时仍可在主栏左上角打开侧栏（#996）。
+- 桌面 Composer 推理强度最高档已与其它档位一样显示本地化名称。例如最高档显示「极高」（#994）。
+- 项目会话不再误用默认工作区的沙箱。在选中项目里写文件又能成功了（#986）。
+- 展开的工具步骤不再把标题和命令叠在同一行。工作列表最后一行会按真实高度排开（#983）。
 - 思考结束后不再把思考过程当成最终回复。正文会直接画出来，不用切走再切回来（#968）。
 - 设置搜索补上了中文关键词，权限、遥测、登录等能搜到了。目录测试会锁住双语关键词（#970）。
 - 打开内置浏览器时，队列编辑等毛玻璃弹窗不再被挡住。弹窗打开期间会暂时藏起原生页面（#976）。
-
-### Changed
-- More UI languages fill in strings that still matched English. Filipino, German, Italian, French, Spanish, Brazilian Portuguese, Indonesian, and Simplified/Traditional Chinese follow the locale (#972–#975, #977–#979).
-
-**中文 · 变更**
-- 更多界面语言补上了原先还跟英文重复的可见文案。Filipino、德、意、法、西、巴西葡、印尼、简繁中文跟语言走（#972–#975、#977–#979）。
+- Doctor 和智能体面板不再用系统原生下拉。跟设置一样走项目 Select（#981）。
+- 文件面板和设置向导的读屏标签跟界面语言走。不再固定英文（#982）。
+- 主题编辑器里的壁纸裁切跟主窗口比例一致。
 
 ## [0.2.29] - 2026-08-31
 
