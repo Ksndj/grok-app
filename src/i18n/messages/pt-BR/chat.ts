@@ -72,6 +72,8 @@ export const ptBRChat = {
   "chat.selectionComment": "Comentar",
   "chat.selectionCommentPlaceholder": "Escreva um comentário sobre este trecho…",
   "chat.selectionCommentSubmit": "Adicionar comentário",
+  "chat.selectionEnterHint": "Enter para adicionar",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter para adicionar",
   "chat.selectionToolbar": "Seleção",
   "message.edit": "Editar",
   "message.exportMd": "Exportar MD",
@@ -159,4 +161,14 @@ export const ptBRChat = {
   "chat.longReplyShowFull": "Mostrar resposta completa",
   "chat.longReplyCollapse": "Mostrar só a prévia",
   "chat.longReplyShowingFull": "Mostrando a resposta completa",
+  "chat.changedFiles.aria": "Arquivos alterados neste turno",
+  "chat.changedFiles.viewAll": "Ver tudo",
+  "chat.changedFiles.openFile": "Revisar alterações em {name}",
+  "chat.changedFiles.more": "+{n} mais",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "Expandir diff de {name}",
+  "chat.changedFiles.collapse": "Recolher diff de {name}",
+  "chat.changedFiles.openInReview": "Abrir no Review",
+  "chat.changedFiles.noDiffYet": "Diff ainda indisponível — abra o Review para o arquivo completo.",
+  "chat.changedFiles.truncated": "Mostrando {shown} de {total} linhas"
 };

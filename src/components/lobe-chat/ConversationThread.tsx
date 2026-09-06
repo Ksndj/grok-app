@@ -51,6 +51,7 @@ import {
   filterEchoedUserAttachments,
   isImagePath,
   isMediaPath,
+  parseAttachmentsFromContent,
   pathBasename,
 } from "@/lib/attachments";
 import {
@@ -61,7 +62,9 @@ import { AttachmentCard } from "@/components/AttachmentCard";
 import { ImageUi, imageUiLabels } from "@/components/ImageUi";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { UserAttachments } from "@/components/lobe-chat/UserAttachments";
-import { TranscriptSelectionToolbar } from "@/components/TranscriptSelectionToolbar";
+import { TranscriptSelectionToolbarHost } from "@/components/TranscriptSelectionToolbarHost";
+import { useComposerSendKeyPref } from "@/hooks/useComposerSendKeyPref";
+import { isSelectionInsideTranscript } from "@/lib/transcriptSelectionBar";
 import { UserQuoteCards } from "@/components/ComposerQuoteCards";
 import {
   parseQuotesFromContent,
@@ -168,10 +171,13 @@ import {
 } from "./TimelineToolRow";
 import { TimelinePhaseBlock } from "./TimelinePhaseBlock";
 import { TurnTail } from "./TurnTail";
+import { TurnChangedFiles } from "./TurnChangedFiles";
 import {
   buildAssistantTimeline,
   shouldShowTrailingLiveThinking,
 } from "@/lib/timelinePhases";
+import type { SessionFileChange } from "@/lib/sessionChanges";
+import { collectTurnModifiedPaths } from "@/lib/turnChangedFiles";
 import { estimateDurationSecFromTimestamps } from "@/lib/formatWorkDuration";
 import { resolveChatTranscriptEmptyState } from "@/lib/chatTranscriptEmpty";
 import { Spinner } from "@/components/ui/spinner";
@@ -423,7 +429,9 @@ const UserBodyText = memo(function UserBodyText({
   findActiveOccurrence?: number | null;
 }) {
   const chatLookup = useAttachedChatLookup();
-  const hydrated = hydrateDisplayContent(content);
+  const hydrated = hydrateDisplayContent(
+    parseAttachmentsFromContent(content).text,
+  );
   const segs = parseStoredContent(hydrated);
   if (
     !segs.some(
@@ -780,6 +788,8 @@ export interface ConversationThreadProps {
   onOpenSessionChanges?: () => void;
   /** Open a modified path from turn activity. */
   onOpenModifiedPath?: (path: string) => void;
+  /** Live session file before/after for turn inline diff cards (#998). */
+  sessionChanges?: SessionFileChange[];
   /**
    * When false, hide message time labels in action rows.
    * createdAt data is still kept on messages — UI only.
@@ -901,6 +911,9 @@ type TranscriptMessageRowProps = {
   onAddAttachmentToComposer?: ConversationThreadProps["onAddAttachmentToComposer"];
   onContinueInterrupted?: ConversationThreadProps["onContinueInterrupted"];
   latestContinuableEndId?: string | null;
+  onOpenSessionChanges?: ConversationThreadProps["onOpenSessionChanges"];
+  onOpenModifiedPath?: ConversationThreadProps["onOpenModifiedPath"];
+  sessionChanges?: ConversationThreadProps["sessionChanges"];
   /**
    * Epoch ms for live thinking on the active streaming assistant
    * (turn / post-steer clock). Null for finished rows.
@@ -934,6 +947,9 @@ function transcriptRowPropsEqual(
   if (a.canRegenerate !== b.canRegenerate) return false;
   if (a.onContinueInterrupted !== b.onContinueInterrupted) return false;
   if (a.latestContinuableEndId !== b.latestContinuableEndId) return false;
+  if (a.onOpenSessionChanges !== b.onOpenSessionChanges) return false;
+  if (a.onOpenModifiedPath !== b.onOpenModifiedPath) return false;
+  if (a.sessionChanges !== b.sessionChanges) return false;
   if (a.turnLive !== b.turnLive) return false;
   if (a.canRewindSession !== b.canRewindSession) return false;
   if (a.canForkFromAssistant !== b.canForkFromAssistant) return false;
@@ -1017,6 +1033,9 @@ const TranscriptMessageRow = memo(function TranscriptMessageRow({
   onAddAttachmentToComposer,
   onContinueInterrupted,
   latestContinuableEndId,
+  onOpenSessionChanges,
+  onOpenModifiedPath,
+  sessionChanges,
 }: TranscriptMessageRowProps) {
   void _timeTick;
   const renderStartRef = useRef<number | null>(null);
@@ -1756,13 +1775,25 @@ const TranscriptMessageRow = memo(function TranscriptMessageRow({
               }
             }
             const durationSec = estimateDurationSecFromTimestamps(stamps);
+            const modifiedPaths = collectTurnModifiedPaths(timelineUnits);
             return (
-              <TurnTail
-                units={timelineUnits}
-                locale={locale}
-                streaming={!!m.streaming}
-                durationSec={durationSec}
-              />
+              <>
+                <TurnTail
+                  units={timelineUnits}
+                  locale={locale}
+                  streaming={!!m.streaming}
+                  durationSec={durationSec}
+                />
+                <TurnChangedFiles
+                  paths={modifiedPaths}
+                  locale={locale}
+                  streaming={!!m.streaming}
+                  sessionChanges={sessionChanges}
+                  projectPath={projectPath}
+                  onOpenPath={onOpenModifiedPath}
+                  onViewAll={onOpenSessionChanges}
+                />
+              </>
             );
           })()}
         </div>
@@ -1896,8 +1927,9 @@ export function ConversationThread({
   sessionId = null,
   locateMessageId = null,
   onLocateMessage,
-  onOpenSessionChanges: _onOpenSessionChanges,
-  onOpenModifiedPath: _onOpenModifiedPath,
+  onOpenSessionChanges,
+  onOpenModifiedPath,
+  sessionChanges,
   showTimestamps = true,
   messageTimeFormat = "absolute",
   showReplyLength = false,
@@ -1908,8 +1940,6 @@ export function ConversationThread({
   turnStartedAt = null,
 }: ConversationThreadProps) {
   const tr = useMemo(() => createT(locale), [locale]);
-  void _onOpenSessionChanges;
-  void _onOpenModifiedPath;
 
   /** Re-render relative labels roughly once a minute. */
   const [relativeTick, setRelativeTick] = useState(0);
@@ -2067,6 +2097,7 @@ export function ConversationThread({
       window.removeEventListener(BACK_BOTTOM_ALWAYS_CHANGE_EVENT, onPref);
   }, []);
 
+  const quoteSendPref = useComposerSendKeyPref();
   const [selectionToolbar, setSelectionToolbar] = useState(() =>
     loadTranscriptSelectionToolbarPref(),
   );
@@ -2128,17 +2159,6 @@ export function ConversationThread({
     y: number;
     text: string;
   } | null>(null);
-  const [selectionBar, setSelectionBar] = useState<{
-    x: number;
-    y: number;
-    text: string;
-    sourceMessageId?: string;
-  } | null>(null);
-  const [selectionComment, setSelectionComment] = useState("");
-  const selectionBarText = selectionBar?.text;
-  useEffect(() => {
-    setSelectionComment("");
-  }, [selectionBarText]);
 
   const copyText = useCallback((text: string) => {
     void (async () => {
@@ -2162,9 +2182,7 @@ export function ConversationThread({
   }, []);
 
   const closeSelectionUi = useCallback(() => {
-    setSelectionBar(null);
     setSelectionMenu(null);
-    setSelectionComment("");
   }, []);
 
   useEffect(() => {
@@ -2203,12 +2221,11 @@ export function ConversationThread({
       // Only when the selection lives inside this transcript viewport.
       const scrollEl = scrollRef.current;
       if (!scrollEl) return;
-      const anchor = sel.anchorNode;
-      const focus = sel.focusNode;
-      const inside =
-        (anchor != null && scrollEl.contains(anchor)) ||
-        (focus != null && scrollEl.contains(focus));
-      if (!inside) return;
+      if (
+        !isSelectionInsideTranscript(sel.anchorNode, sel.focusNode, scrollEl)
+      ) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       setSelectionMenu({ x: e.clientX, y: e.clientY, text });
@@ -2234,87 +2251,6 @@ export function ConversationThread({
       },
     ];
   }, [selectionMenu, tr, copyText, addQuoteFromSelection]);
-
-  const readTranscriptSelection = useCallback(() => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return null;
-    const text = sel.toString().replace(/\u00a0/g, " ").trim();
-    if (!text) return null;
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return null;
-    const anchor = sel.anchorNode;
-    const focus = sel.focusNode;
-    const inside =
-      (anchor != null && scrollEl.contains(anchor)) ||
-      (focus != null && scrollEl.contains(focus));
-    if (!inside) return null;
-    let sourceMessageId: string | undefined;
-    let node: Node | null = anchor;
-    while (node && node !== scrollEl) {
-      if (node instanceof HTMLElement) {
-        const id = node.getAttribute("data-message-id");
-        if (id) {
-          sourceMessageId = id;
-          break;
-        }
-      }
-      node = node.parentNode;
-    }
-    let rect: DOMRect | null = null;
-    if (sel.rangeCount > 0) {
-      const r = sel.getRangeAt(0).getBoundingClientRect();
-      if (r.width || r.height) rect = r;
-    }
-    return { text, sourceMessageId, rect };
-  }, []);
-
-  useEffect(() => {
-    if (!selectionToolbar) return;
-    const showBar = (next: {
-      text: string;
-      sourceMessageId?: string;
-      rect: DOMRect | null;
-    }) => {
-      const x = next.rect
-        ? next.rect.left + next.rect.width / 2 - 140
-        : 24;
-      const y = next.rect ? next.rect.bottom + 8 : 24;
-      setSelectionBar({
-        x,
-        y,
-        text: next.text,
-        sourceMessageId: next.sourceMessageId,
-      });
-    };
-    const onSel = () => {
-      const next = readTranscriptSelection();
-      // Focusing the comment box collapses the native selection — keep the bar.
-      if (!next) return;
-      showBar(next);
-    };
-    const onUp = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      const next = readTranscriptSelection();
-      if (next) showBar(next);
-    };
-    document.addEventListener("selectionchange", onSel);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("selectionchange", onSel);
-      document.removeEventListener("mouseup", onUp);
-    };
-  }, [readTranscriptSelection, selectionToolbar]);
-
-  useEffect(() => {
-    if (!selectionBar) return;
-    const onDoc = (e: MouseEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t?.closest(".sel-toolbar")) return;
-      closeSelectionUi();
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [selectionBar, closeSelectionUi]);
 
   const messageNodes = useMemo(
     () => buildSessionMessageNodes(messages),
@@ -3185,6 +3121,9 @@ export function ConversationThread({
               onAddAttachmentToComposer={onAddAttachmentToComposer}
               onContinueInterrupted={onContinueInterrupted}
               latestContinuableEndId={latestContinuableEndId}
+              onOpenSessionChanges={onOpenSessionChanges}
+              onOpenModifiedPath={onOpenModifiedPath}
+              sessionChanges={sessionChanges}
             />
           ))}
 
@@ -3265,30 +3204,22 @@ export function ConversationThread({
         onClose={() => setSelectionMenu(null)}
         items={selectionMenuItems}
       />
-      {selectionBar && selectionToolbar ? (
-        <TranscriptSelectionToolbar
-          x={selectionBar.x}
-          y={selectionBar.y}
-          text={selectionBar.text}
-          comment={selectionComment}
-          onCommentChange={setSelectionComment}
-          onCopy={() => {
-            copyText(selectionBar.text);
-            closeSelectionUi();
-          }}
-          onAddQuote={() =>
-            addQuoteFromSelection(
-              selectionBar.text,
-              selectionComment,
-              selectionBar.sourceMessageId,
-            )
+      {selectionToolbar ? (
+        <TranscriptSelectionToolbarHost
+          scrollRef={scrollRef}
+          sessionId={sessionId}
+          onAddQuote={(q) =>
+            addQuoteFromSelection(q.text, q.comment, q.sourceMessageId)
           }
-          onClose={closeSelectionUi}
+          onCopyText={copyText}
+          sendPref={quoteSendPref}
           labels={{
             copy: tr("chat.selectionCopy"),
             addQuote: tr("chat.selectionAddToInput"),
             commentPlaceholder: tr("chat.selectionCommentPlaceholder"),
             commentSubmit: tr("chat.selectionCommentSubmit"),
+            enterHint: tr("chat.selectionEnterHint"),
+            modEnterHint: tr("chat.selectionModEnterHint"),
           }}
         />
       ) : null}

@@ -20,20 +20,86 @@ See `docs/llm-wiki/release.md`.
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
 
 ### Fixed
-- Settings render errors no longer blank the whole window. The Settings stage keeps a Retry panel; changing section resets it (#1006).
-- Custom-model chats no longer switch models between turn 1 and turn 2. Picker `app_models` ids resolve to the same config section for spawn and reconnect (#1000).
-- Windows can add a project by dropping a folder on the sidebar again. Native drag-drop paths are restored; path-less sidebar drops show a clear hint instead of doing nothing (#999).
-- Chat no longer crashes mid-stream with React error #30 when a turn fails. Assistant timeline work no longer runs after early returns on the same row (#1002).
-- Phone mirror turns finish on the phone, and the desktop shows the phone’s message. Session stream/state events fan out to mirror clients again (#1001).
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
 
 **中文 · 修复**
-- 设置页渲染出错时不再整窗空白。设置舞台会留下可重试面板；切换分区会重置（#1006）。
-- 自定义模型会话不会再在第一轮与第二轮之间悄悄换模型。选择器里的 `app_models` id 会在启动与重连时解析成同一个配置段（#1000）。
-- Windows 又能把文件夹拖到侧栏加为项目。已恢复原生拖放路径；读不到路径时会提示，不再没反应（#999）。
-- 回合失败时聊天区不再因 React #30 崩溃。同一条助手消息不会在提前返回后再跑时间线 hooks（#1002）。
-- 手机镜像回合会在手机端正常结束，电脑也能看到手机发出的消息。会话流式/状态事件会再次同步到镜像客户端（#1001）。
 - 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+
+## [0.2.32] - 2026-09-06
+
+> **Highlight:** Windows drag-drop and Mac Doubao voice work again, with leaner tool memory.
+>
+> **中文 · 亮点：** Windows 拖放与 Mac 豆包语音恢复可用，工具内存也更省。
+
+### Changed
+- The quote toolbar appears after text selection settles, keeping chat selection smooth.
+- Slash and @ detection pause while the window is hidden or the input is not focused.
+- Long chats stay smoother when no session files changed.
+- The quote comment box uses the same Enter / Ctrl+Enter shortcut as the composer (#1015).
+- Running tool steps stay collapsed by default to reduce memory use (#1018).
+- Completed tool output uses less memory in long turns (#1029).
+
+**中文 · 变更**
+- 对话划词结束后再显示引用工具栏，对话选取更顺畅。
+- 窗口隐藏或输入框未聚焦时，斜杠和 @ 探测会停。
+- 没有文件变更时，长对话保持流畅。
+- 划词评论框与输入框共用 Enter / Ctrl+Enter 发送快捷键（#1015）。
+- 工具运行中默认折叠，减少内存占用（#1018）。
+- 工具结束后占用更少内存，长回合更顺畅（#1029）。
+
+### Fixed
+- Mac Control+Return steers a live turn again (#1023).
+- Windows Explorer drag-drop works again for projects and chat attachments (#1017).
+- Image prompts no longer paint two user bubbles (#1021).
+- Enter in the composer sends a quote card even when the input is empty (#1015).
+- Wide Markdown tables now scroll horizontally without fading on the right (#1020).
+- Mac Doubao IME Fn / Globe voice works in the chat composer again (#1030).
+
+**中文 · 修复**
+- Mac 上 Control+Return 又能引导当前回合（#1023）。
+- Windows 资源管理器拖放项目和附件恢复可用（#1017）。
+- 带图发送不再画出两条用户气泡（#1021）。
+- 输入框为空时按 Enter 也能只发送引用卡片（#1015）。
+- 过宽的 Markdown 表格支持横向滚动，右侧不再变淡（#1020）。
+- Mac 上豆包输入法按 Fn / Globe 可唤起语音（#1030）。
+
+## [0.2.31] - 2026-09-04
+
+> **Highlight:** See which files the agent edited, then expand a highlighted diff in chat.
+>
+> **中文 · 亮点：** 回合结束后能看到改了哪些文件，并在对话里展开高亮 diff。
+
+### Added
+- Chat shows expandable cards for files the agent edited. Open Review from a card for the focused diff (#998).
+- OrcaRouter is available as a custom-provider preset (#1004).
+
+**中文 · 新增**
+- 助手改完文件后，对话里会出现可展开的改动卡片。也可从卡片打开 Review 看聚焦 diff（#998）。
+- 自定义供应商画廊增加了 OrcaRouter 一键预设（#1004）。
+
+### Changed
+- In-app CLI upgrades warn when a newer App is available. You can still continue after confirming (#1009).
+- Project folder actions stay hidden until you hover the row.
+- Long streaming replies paint more smoothly near the end of the message.
+
+**中文 · 变更**
+- 应用内升级 CLI 时，若已有新版 App 会先提醒。确认后仍可继续升级（#1009）。
+- 项目文件夹右侧操作按钮改为悬停才显示。
+- 长回复流式输出接近结尾时更顺滑。
+
+### Fixed
+- Settings render errors no longer blank the whole window. The Settings stage keeps a Retry panel (#1006).
+- Custom-model chats no longer switch models between turn 1 and turn 2 (#1000).
+- Windows can add a project by dropping a folder on the sidebar again (#999).
+- Chat no longer crashes mid-stream with React error #30 when a turn fails (#1002).
+- Phone mirror turns finish on the phone, and the desktop shows that message (#1001).
+
+**中文 · 修复**
+- 设置页渲染出错时不再整窗空白。设置舞台会留下可重试面板（#1006）。
+- 自定义模型会话不会再在第一轮与第二轮之间悄悄换模型（#1000）。
+- Windows 又能把文件夹拖到侧栏加为项目（#999）。
+- 回合失败时聊天区不再因 React #30 崩溃（#1002）。
+- 手机镜像回合会在手机端正常结束，电脑也能看到手机发出的消息（#1001）。
 
 ## [0.2.30] - 2026-09-02
 

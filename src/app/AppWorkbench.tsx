@@ -328,10 +328,7 @@ import {
   shouldConfirmSessionNoteDiscard,
   validateSessionNote,
 } from "@/lib/sessionNotes";
-import {
-  dismissCliUpdateNotice,
-  shouldOfferCliUpdateNotice,
-} from "@/lib/cliUpdateNotice";
+import { CliUpdateOfferBar } from "@/components/CliUpdateOfferBar";
 import {
   loadDone as loadProductTutorialDone,
   markDone as markProductTutorialDone,
@@ -352,7 +349,6 @@ import {
 import { useAttachChat } from "@/hooks/useAttachChat";
 import { mapStoredMessagesToChat } from "@/lib/mapStoredMessages";
 import {
-  detectAtQueryFromEditor,
   rankAtFileHits,
   removeAtTokenFromDraft,
 } from "@/lib/atFileQuery";
@@ -371,7 +367,6 @@ import {
   applyPluginAtSlash,
   applySkillAtSlash,
   isDraftEmpty,
-  detectSlashQueryFromEditor,
   detectSlashRangeOnStored,
   parseStoredContent,
   serializeForAgent,
@@ -427,6 +422,7 @@ import {
 } from "@/lib/composerSessionDraft";
 import {
   appendQuotesToContent,
+  composerHasSendPayload,
   makeComposerQuoteId,
   serializeQuotesForAgent,
   type ComposerQuote,
@@ -465,7 +461,6 @@ import type { MessageKey } from "@/i18n";
 import { ImageViewerProvider } from "@/components/ImageViewer";
 import {
   type SidebarSessionRowLabels,
-  type SidebarSessionWorktreeBadgeProp,
 } from "@/components/SidebarSessionRow";
 import { sidebarSessionRowMetrics } from "@/lib/sidebarDensity";
 import { sortSessionsForSidebar } from "@/lib/sidebarDateGroups";
@@ -486,36 +481,9 @@ import {
 } from "@/components/ComposerEditor";
 
 import {
-  applyGitStatusBranch,
-  buildWorktreePath,
-  canRemoveWorktree,
-  mainWorktreePath,
-  normalizeWorktreeLayout,
   pathsEqual,
-  resolveSessionWorktreeBadge,
-  sanitizeWorktreeName,
-  sanitizeWorktreeRef,
-  sessionWorktreeTooltip,
   worktreeEntryForPath,
-  worktreeRemoveErrorSuggestsForce,
-  type SessionWorktreeBadge,
-  type WorktreeLayout,
 } from "@/lib/gitWorktree";
-import { filterCliWorktreesForProject } from "@/lib/cliWorktrees";
-import {
-  canShipWorktree,
-  combineShipOutcome,
-  defaultPrTitleFromBranch,
-  redactShipOutput,
-  sanitizePrBody,
-  sanitizePrTitle,
-  shipOutcomeSummary,
-} from "@/lib/wtShipFlow";
-import {
-  PR_HUB_ANCHOR_ID,
-  buildPrHubDeepLink,
-  parseGithubPrNumber,
-} from "@/lib/prHubDeepLink";
 import {
   buildForkWorktreeName,
   canRestoreCodeOnFork,
@@ -602,10 +570,13 @@ import { resolveSidePathDeepLink } from "@/lib/sidePathDeepLink";
 import { WorkbenchAppDialogStage } from "@/app/WorkbenchAppDialogStage";
 import { WorkbenchComposerModals } from "@/app/WorkbenchComposerModals";
 import {
+  EMPTY_SESSION_FILE_CHANGES,
   mergeSessionChange,
+  sessionChangesFromMessages,
   summarizeSessionChanges,
   type SessionFileChange,
 } from "@/lib/sessionChanges";
+import { pinReviewFocusPath } from "@/lib/reviewFocusPaths";
 import {
   gitDirtySummariesEqual,
   summarizeGitDirty,
@@ -696,6 +667,10 @@ import type { ContextMenuState } from "@/lib/app/appDialogTypes";
 import { useSessionRuntime } from "@/hooks/useSessionRuntime";
 import { sessionTranscriptStore } from "@/lib/sessionTranscriptStore";
 import { useSessionConnect, createSessionConnectHost } from "@/hooks/useSessionConnect";
+import {
+  createGitWorktreeChromeHost,
+  useGitWorktreeChrome,
+} from "@/hooks/useGitWorktreeChrome";
 import { useComposerController } from "@/hooks/useComposerController";
 import { useTypeToFocusComposer } from "@/hooks/useTypeToFocusComposer";
 import { useAppDialogs } from "@/hooks/useAppDialogs";
@@ -1099,6 +1074,16 @@ export function AppWorkbench() {
     Record<string, SessionFileChange[]>
   >({});
   /**
+   * Turn changed-files chip → Review focus (#998).
+   * Lifted out of SideWorkbench so open races cannot drop the path.
+   * `pinnedPaths` always appear in Review even when sessionChanges is empty.
+   */
+  const [reviewFocus, setReviewFocus] = useState<{
+    path: string;
+    token: number;
+    pinnedPaths: string[];
+  } | null>(null);
+  /**
    * Workspace git dirty summary for the active project (composer chip).
    * Null when not a repo, unavailable, clean, or no active project.
    */
@@ -1155,7 +1140,6 @@ export function AppWorkbench() {
     setLiveSlash,
     liveSlashRef,
     slashDismissedSigRef,
-    showComposerPlusRef,
     slashActiveIndex,
     setSlashActiveIndex,
     slashKindFilter,
@@ -1386,6 +1370,7 @@ export function AppWorkbench() {
   const automationAppliedRef = useRef(new Set<string>());
   const sessionNavHostRef = useRef(createSessionNavHost());
   const sessionConnectHostRef = useRef(createSessionConnectHost());
+  const gitWorktreeHostRef = useRef(createGitWorktreeChromeHost());
   const {
     openSession,
     newChat,
@@ -1579,7 +1564,6 @@ export function AppWorkbench() {
         shortcutRemapsRef.current,
         {
           voiceHotkeyEnabled: voiceHotkeyEnabledRef.current,
-          settingsOpen: escapeStopLiveRef.current.settingsOpen,
         },
       );
       if (!matched) return;
@@ -1656,36 +1640,6 @@ export function AppWorkbench() {
   useEffect(() => {
     if (appGate !== "ready") return;
     void ensureNotifyPermission();
-  }, [appGate]);
-  /** Soft CLI update offer after Ready (#238) — never blocks startup. */
-  const [cliUpdateOffer, setCliUpdateOffer] = useState<{
-    current: string;
-    latest: string;
-  } | null>(null);
-  const [cliUpdateBusy, setCliUpdateBusy] = useState(false);
-  useEffect(() => {
-    if (appGate !== "ready" || !api.isTauri() || isMirrorClient()) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const r = await api.cliUpdateCheck();
-          if (cancelled || r.error || !r.updateAvailable) return;
-          const current = String(
-            r.currentVersion || r.current || r.version || "",
-          ).trim();
-          const latest = String(r.latestVersion || r.latest || "").trim();
-          if (!latest || !shouldOfferCliUpdateNotice(latest)) return;
-          setCliUpdateOffer({ current: current || "—", latest });
-        } catch {
-          /* network / CLI missing: silent */
-        }
-      })();
-    }, 4500);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
   }, [appGate]);
   const [setupCliSeed, setSetupCliSeed] = useState<SetupCliInfo | null>(null);
   const [showDoctor, setShowDoctor] = useState(false);
@@ -2094,62 +2048,31 @@ export function AppWorkbench() {
   const [batchAgentsOpen, setBatchAgentsOpen] = useState(false);
   /** Ops hub (palette open-ops) — routes to tasks / dashboard / board / batch. */
   const [opsEntryOpen, setOpsEntryOpen] = useState(false);
-  const [gitWorktrees, setGitWorktrees] = useState<api.GitWorktreeEntry[]>([]);
-  /** null = unknown/loading; true = git work tree; false = not a git repo. */
-  const [gitWorktreesAvailable, setGitWorktreesAvailable] = useState<
-    boolean | null
-  >(null);
-  const [gitWorktreesLoading, setGitWorktreesLoading] = useState(false);
-  const [gitWorktreesReason, setGitWorktreesReason] = useState<string | null>(
-    null,
-  );
-  /** New worktree dialog (name + optional start-point + layout). */
-  const [worktreeCreateOpen, setWorktreeCreateOpen] = useState(false);
-  const [worktreeCreateName, setWorktreeCreateName] = useState("");
-  const [worktreeCreateRef, setWorktreeCreateRef] = useState("");
-  /** Default CLI-aligned (`~/.grok/worktrees`); optional sibling. */
-  const [worktreeCreateLayout, setWorktreeCreateLayout] =
-    useState<WorktreeLayout>("cli");
-  const [worktreeCreateBusy, setWorktreeCreateBusy] = useState(false);
-  const [worktreeCreateError, setWorktreeCreateError] = useState<string | null>(
-    null,
-  );
-  /** When true, after create bind cwd and open a draft chat on that path. */
-  const [worktreeCreateStartChat, setWorktreeCreateStartChat] = useState(false);
-  /** Absolute `~/.grok` from host list (CLI path preview + badge detection). */
-  const [cliGrokHome, setCliGrokHome] = useState<string | null>(null);
-  /** CLI-tracked worktrees from `grok worktree list` (soft-fail). */
-  const [cliWorktrees, setCliWorktrees] = useState<api.CliWorktreeEntry[]>([]);
-  const [cliWorktreesAvailable, setCliWorktreesAvailable] = useState<
-    boolean | null
-  >(null);
-  const [cliWorktreesLoading, setCliWorktreesLoading] = useState(false);
-  const [cliWorktreesReason, setCliWorktreesReason] = useState<string | null>(
-    null,
-  );
-  /** Clean stale worktrees (git worktree prune) dialog. */
-  const [worktreeGcOpen, setWorktreeGcOpen] = useState(false);
-  const [worktreeGcForce, setWorktreeGcForce] = useState(false);
-  const [worktreeGcBusy, setWorktreeGcBusy] = useState(false);
-  const [worktreeGcPreviewBusy, setWorktreeGcPreviewBusy] = useState(false);
-  const [worktreeGcError, setWorktreeGcError] = useState<string | null>(null);
-  const [worktreeGcPreview, setWorktreeGcPreview] =
-    useState<api.GitWorktreeGcResult | null>(null);
-  /** Worktree ship flow (push + Open PR) dialog. */
-  const [shipOpen, setShipOpen] = useState(false);
-  const [shipTitle, setShipTitle] = useState("");
-  const [shipBody, setShipBody] = useState("");
-  const [shipDraft, setShipDraft] = useState(false);
-  const [shipCreatePr, setShipCreatePr] = useState(true);
-  const [shipBusy, setShipBusy] = useState(false);
-  const [shipError, setShipError] = useState<string | null>(null);
-  const [shipBranch, setShipBranch] = useState<string | null>(null);
-  const [shipStatus, setShipStatus] = useState<string | null>(null);
-  /** After successful `gh pr create` — success panel with URL + Open in PR hub. */
-  const [shipSuccess, setShipSuccess] = useState<{
-    prUrl: string;
-    prNumber: number | null;
-  } | null>(null);
+  const {
+    gitWorktrees,
+    gitWorktreesAvailable,
+    gitWorktreesLoading,
+    gitWorktreesReason,
+    cliWorktrees,
+    cliWorktreesAvailable,
+    cliWorktreesLoading,
+    cliWorktreesReason,
+    openWorktreeCreate,
+    openWorktreeGc,
+    openShipFlow,
+    confirmRemoveWorktree,
+    switchToWorktree,
+    markSessionWorktree,
+    sessionWorktreeBadgeFor,
+    buildSidebarWorktreeBadge,
+    refreshGitWorktrees,
+    refreshCliWorktrees,
+    applyStatusBranch,
+    worktreeChrome,
+  } = useGitWorktreeChrome({
+    hostRef: gitWorktreeHostRef,
+    projectPath: activeProject?.path ?? null,
+  });
   /** Host stream-stall prompt (I06); null when dismissed or not stalled. */
   const [streamStall, setStreamStall] = useState<{
     sessionId?: string;
@@ -2312,20 +2235,30 @@ export function AppWorkbench() {
   const dragRegion = tauriDragRegion(platform);
   const [windowMaximized, setWindowMaximized] = useState(false);
 
-  /** Route chat context opens into Side Workbench tabs.
-   * When the aside is mounted, SideWorkbench `openRequest` is the only consumer. */
+  /**
+   * Route chat context opens into Side Workbench tabs.
+   * When the aside is collapsed, open it and keep `resourceOpenTarget` so
+   * SideWorkbench can consume path (e.g. Review focus for #998). Clearing
+   * here dropped path and left Review empty / unfocused.
+   */
   useEffect(() => {
     if (!resourceOpenTarget) return;
     if (!layout.asideCollapsed) return;
     const result = applySideContextOpen(sideWorkbench, resourceOpenTarget, {
       isGitProject: sideIsGitProject,
     });
-    if (result.noticeKey) {
+    // Turn-chip opens with a path still work without git — skip the scary toast (#998).
+    const skipNotGitToast =
+      resourceOpenTarget.type === "changes" &&
+      !!(resourceOpenTarget.path || "").trim();
+    if (result.noticeKey && !skipNotGitToast) {
       showToast(tr(result.noticeKey), 2400);
     }
     if (result.needAsideOpen) {
       setSideWorkbench(result.state);
       openAsidePane();
+      // Keep target — SideWorkbench openRequest effect consumes path + clears.
+      return;
     }
     setResourceOpenTarget(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- consume once per target
@@ -6706,117 +6639,6 @@ export function AppWorkbench() {
   /** + button and `/` open the same panel. */
   const composerMenuOpen = showComposerPlus || liveSlash.present;
 
-  /**
-   * rAF poll → live slash token (open palette + filter).
-   * Prefer DOM serialize, fall back to draft store (Enter SoT can leave DOM
-   * one frame behind; slash is end-anchored so we need a reliable string).
-   */
-  useEffect(() => {
-    let raf = 0;
-    let alive = true;
-    const tick = () => {
-      if (!alive) return;
-      const el = composerInputRef.current;
-      const detected =
-        detectSlashQueryFromEditor(el) ??
-        detectSlashRangeOnStored(getComposerDraft());
-      let next = detected
-        ? {
-            present: true as const,
-            query: detected.query,
-            start: detected.start,
-            end: detected.end,
-          }
-        : {
-            present: false as const,
-            query: "",
-            start: 0,
-            end: 0,
-          };
-      // Honor Escape dismiss until the user edits the `/token`.
-      if (next.present && slashDismissedSigRef.current != null) {
-        const sig = `${next.start}:${next.query}`;
-        if (sig === slashDismissedSigRef.current) {
-          next = { present: false, query: "", start: 0, end: 0 };
-        } else {
-          slashDismissedSigRef.current = null;
-        }
-      }
-      if (!next.present && detected == null) {
-        slashDismissedSigRef.current = null;
-      }
-      const prev = liveSlashRef.current;
-      if (
-        prev.present !== next.present ||
-        prev.query !== next.query ||
-        prev.start !== next.start ||
-        prev.end !== next.end
-      ) {
-        liveSlashRef.current = next;
-        setLiveSlash(next);
-        if (next.present) {
-          setSlashQuery({
-            start: next.start,
-            query: next.query,
-            end: next.end,
-          });
-        } else if (!showComposerPlusRef.current) {
-          setSlashQuery((q) => (q == null ? q : null));
-        }
-      }
-      // @ file mention — suppressed while slash/plus is open.
-      let atNext: {
-        present: boolean;
-        query: string;
-        start: number;
-        end: number;
-      } = {
-        present: false,
-        query: "",
-        start: 0,
-        end: 0,
-      };
-      if (!next.present && !showComposerPlusRef.current) {
-        const atDetected = detectAtQueryFromEditor(el);
-        if (atDetected) {
-          atNext = {
-            present: true,
-            query: atDetected.query,
-            start: atDetected.start,
-            end: atDetected.end,
-          };
-          if (atDismissedSigRef.current != null) {
-            const sig = `${atNext.start}:${atNext.query}`;
-            if (sig === atDismissedSigRef.current) {
-              atNext = { present: false, query: "", start: 0, end: 0 };
-            } else {
-              atDismissedSigRef.current = null;
-            }
-          }
-        } else {
-          atDismissedSigRef.current = null;
-        }
-      }
-      const prevAt = liveAtRef.current;
-      if (
-        prevAt.present !== atNext.present ||
-        prevAt.query !== atNext.query ||
-        prevAt.start !== atNext.start ||
-        prevAt.end !== atNext.end
-      ) {
-        liveAtRef.current = atNext;
-        setLiveAt(atNext);
-        if (atNext.present) setAtActiveIndex(0);
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      alive = false;
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
   /** Pin above input card; width matches composer shell.
    * Re-anchor when filter results change height (short list must sit on input). */
   const { pos: composerPlusPos, style: composerPlusStyle } = useFloatingMenu({
@@ -7904,7 +7726,6 @@ export function AppWorkbench() {
   // with Host pick_interjection_target mid-turn, not streaming-only FSM.
   const canGuideQueuedMessage =
     !!session.sessionId &&
-    !connecting &&
     isSessionLiveStreaming(session.state) &&
     (liveHost.sessionId === session.sessionId
       ? isSessionLiveStreaming(liveHost.state) ||
@@ -9346,7 +9167,9 @@ export function AppWorkbench() {
   /** Session file-changes chip (+/− or N files); hidden when empty. */
   const sessionChangesSummary = useMemo(() => {
     const sid = session.sessionId || "";
-    const list = sid ? (sessionChangesById[sid] ?? []) : [];
+    const list = sid
+      ? (sessionChangesById[sid] ?? EMPTY_SESSION_FILE_CHANGES)
+      : EMPTY_SESSION_FILE_CHANGES;
     return summarizeSessionChanges(list);
   }, [session.sessionId, sessionChangesById]);
 
@@ -10232,125 +10055,6 @@ export function AppWorkbench() {
     [requestMove, session.sessionId, sessions],
   );
 
-  const gitWorktreesReqRef = useRef(0);
-  const gitWorktreesPathRef = useRef<string | null>(null);
-  const refreshGitWorktrees = useCallback(async () => {
-    const path = activeProject?.path?.trim() || null;
-    if (!path || !api.isTauri()) {
-      gitWorktreesReqRef.current += 1;
-      gitWorktreesPathRef.current = null;
-      setGitWorktrees([]);
-      setGitWorktreesAvailable(null);
-      setGitWorktreesReason(null);
-      setCliGrokHome(null);
-      setGitWorktreesLoading(false);
-      return;
-    }
-    const reqId = ++gitWorktreesReqRef.current;
-    // Drop stale rows when the active project path changes; soft-refresh keeps
-    // the previous list for the same path so the menu does not flash empty.
-    if (gitWorktreesPathRef.current !== path) {
-      gitWorktreesPathRef.current = path;
-      setGitWorktrees([]);
-      setGitWorktreesAvailable(null);
-      setGitWorktreesReason(null);
-    }
-    setGitWorktreesLoading(true);
-    try {
-      const res = await api.gitWorktreesList(path);
-      if (reqId !== gitWorktreesReqRef.current) return;
-      const home = (res.cliGrokHome || "").trim() || null;
-      if (home) setCliGrokHome(home);
-      if (!res.available) {
-        setGitWorktrees([]);
-        setGitWorktreesAvailable(false);
-        setGitWorktreesReason(res.reason?.trim() || "unavailable");
-      } else {
-        setGitWorktrees(res.worktrees ?? []);
-        setGitWorktreesAvailable(true);
-        setGitWorktreesReason(null);
-      }
-    } catch (e) {
-      if (reqId !== gitWorktreesReqRef.current) return;
-      setGitWorktrees([]);
-      setGitWorktreesAvailable(false);
-      setGitWorktreesReason(String(e));
-    } finally {
-      if (reqId === gitWorktreesReqRef.current) {
-        setGitWorktreesLoading(false);
-      }
-    }
-  }, [activeProject?.path]);
-
-  useEffect(() => {
-    void refreshGitWorktrees();
-  }, [refreshGitWorktrees]);
-
-  const cliWorktreesReqRef = useRef(0);
-  const refreshCliWorktrees = useCallback(async () => {
-    if (!api.isTauri()) {
-      cliWorktreesReqRef.current += 1;
-      setCliWorktrees([]);
-      setCliWorktreesAvailable(null);
-      setCliWorktreesReason(null);
-      setCliWorktreesLoading(false);
-      return;
-    }
-    const reqId = ++cliWorktreesReqRef.current;
-    setCliWorktreesLoading(true);
-    try {
-      const projectPath = activeProject?.path?.trim() || null;
-      const repoSlug = projectPath
-        ? projectPath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ||
-          null
-        : null;
-      const res = await api.cliWorktreesList({
-        all: false,
-        // CLI --repo matches repo_name (e.g. grok-app), not folder basename.
-        // Leave unfiltered; UI filters by source path / worktrees slug.
-        repo: null,
-      });
-      if (reqId !== cliWorktreesReqRef.current) return;
-      if (!res.available) {
-        setCliWorktrees([]);
-        setCliWorktreesAvailable(false);
-        setCliWorktreesReason(res.reason?.trim() || "unavailable");
-      } else {
-        // Prefer rows for the active project when we can match source/repo.
-        const filtered = filterCliWorktreesForProject(
-          res.worktrees ?? [],
-          projectPath,
-          repoSlug,
-        );
-        setCliWorktrees(filtered);
-        setCliWorktreesAvailable(true);
-        setCliWorktreesReason(null);
-      }
-    } catch (e) {
-      if (reqId !== cliWorktreesReqRef.current) return;
-      setCliWorktrees([]);
-      setCliWorktreesAvailable(false);
-      setCliWorktreesReason(String(e));
-    } finally {
-      if (reqId === cliWorktreesReqRef.current) {
-        setCliWorktreesLoading(false);
-      }
-    }
-  }, [activeProject?.path]);
-
-  useEffect(() => {
-    // Load CLI list when the branch menu can appear (git work tree confirmed).
-    if (gitWorktreesAvailable === true) {
-      void refreshCliWorktrees();
-    } else if (gitWorktreesAvailable === false) {
-      cliWorktreesReqRef.current += 1;
-      setCliWorktrees([]);
-      setCliWorktreesAvailable(null);
-      setCliWorktreesReason(null);
-      setCliWorktreesLoading(false);
-    }
-  }, [gitWorktreesAvailable, refreshCliWorktrees]);
-
   /**
    * Poll workspace git status for the effective project path so the composer
    * dirty chip stays current and Review stays gated on a live `available`
@@ -10378,12 +10082,12 @@ export function AppWorkbench() {
       );
       // Same poll already has HEAD. Patch the composer branch chip so an
       // in-place checkout does not stay stale until the menu is clicked.
-      setGitWorktrees((prev) => applyGitStatusBranch(prev, path, status));
+      applyStatusBranch(path, status);
     } catch {
       if (reqId !== gitDirtyReqRef.current) return;
       setGitDirtySummary((prev) => (prev == null ? prev : null));
     }
-  }, [effectiveProjectPath]);
+  }, [effectiveProjectPath, applyStatusBranch]);
 
   useEffect(() => {
     void refreshGitDirtyStatus();
@@ -10472,611 +10176,27 @@ export function AppWorkbench() {
     ],
   );
 
-  /** Open gc dialog and run dry-run preview. */
-  const openWorktreeGc = useCallback(() => {
-    setWorktreeGcForce(false);
-    setWorktreeGcError(null);
-    setWorktreeGcBusy(false);
-    setWorktreeGcPreview(null);
-    setWorktreeGcOpen(true);
-  }, []);
-
-  /** Open Ship… dialog for the active project / worktree cwd. */
-  const openShipFlow = useCallback(() => {
-    if (!api.isTauri() || !activeProject?.path) {
-      showToast(tr("composer.worktreeShipNeedProject"), 3500);
-      return;
-    }
-    const current =
-      gitWorktrees.find((w) => pathsEqual(w.path, activeProject.path)) ?? null;
-    const branch =
-      current?.branch?.trim() ||
-      (session.sessionId
-        ? sessions.find((s) => s.id === session.sessionId)?.worktreeBranch
-        : null) ||
-      null;
-    if (
-      !canShipWorktree({
-        branch,
-        detached: current?.detached ?? !branch,
-        available: gitWorktreesAvailable,
-      })
-    ) {
-      // Still allow open with empty title if branch unknown — host resolves HEAD.
-      // But refuse detached when we know it.
-      if (current?.detached) {
-        showToast(tr("composer.worktreeShipDetached"), 4000);
-        return;
-      }
-    }
-    setShipBranch(branch);
-    setShipTitle(defaultPrTitleFromBranch(branch));
-    setShipBody("");
-    setShipDraft(false);
-    setShipCreatePr(true);
-    setShipError(null);
-    setShipStatus(null);
-    setShipSuccess(null);
-    setShipBusy(false);
-    setShipOpen(true);
-  }, [
-    activeProject?.path,
-    gitWorktrees,
-    gitWorktreesAvailable,
-    session.sessionId,
-    sessions,
-    showToast,
-    tr,
-  ]);
-
-  /** Close ship dialog and clear transient success state. */
-  const closeShipFlow = useCallback(() => {
-    if (shipBusy) return;
-    setShipOpen(false);
-    setShipError(null);
-    setShipStatus(null);
-    setShipSuccess(null);
-  }, [shipBusy]);
-
-  /**
-   * Navigate to Settings → Runtime → Tools PR hub for the active project,
-   * optionally highlighting a PR number. Soft-fails with a toast (never throws).
-   */
-  const openPrHubFromShip = useCallback(
-    (prNumber: number | null) => {
-      try {
-        if (!activeProject?.path?.trim()) {
-          showToast(tr("composer.worktreeShipOpenHubFailed"), 4000);
-          return;
-        }
-        setPrHubHighlightPr(prNumber);
-        setSettingsFocusAnchor(PR_HUB_ANCHOR_ID);
-        navigateSettings("runtime", "tools");
-        if (typeof window !== "undefined") {
-          const hash = buildPrHubDeepLink({ prNumber });
-          if (window.location.hash !== hash) {
-            window.location.hash = hash;
-          }
-        }
-        setShipOpen(false);
-        setShipSuccess(null);
-        setShipError(null);
-        setShipStatus(null);
-      } catch {
-        showToast(tr("composer.worktreeShipOpenHubFailed"), 4000);
-      }
-    },
-    [activeProject?.path, navigateSettings, showToast, tr],
-  );
-
-  const submitShipFlow = useCallback(async () => {
-    if (!api.isTauri() || !activeProject?.path) return;
-    let title: string;
-    let body: string;
-    try {
-      title = sanitizePrTitle(shipTitle);
-      body = sanitizePrBody(shipBody);
-    } catch (e) {
-      setShipError(String(e));
-      return;
-    }
-    setShipBusy(true);
-    setShipError(null);
-    setShipSuccess(null);
-    setShipStatus(tr("composer.worktreeShipPushing"));
-    try {
-      const push = await api.gitPushBranch(activeProject.path);
-      let pr: api.GhPrCreateResult | null = null;
-      if (shipCreatePr) {
-        setShipStatus(tr("composer.worktreeShipCreatingPr"));
-        pr = await api.ghPrCreate({
-          projectPath: activeProject.path,
-          title,
-          body,
-          draft: shipDraft,
-          base: "main",
-        });
-      }
-      const outcome = combineShipOutcome(push, pr, {
-        createPr: shipCreatePr,
-      });
-      const summary = shipOutcomeSummary(outcome);
-      if (outcome.ok) {
-        setShipStatus(null);
-        if (outcome.prUrl) {
-          // Success panel: PR URL + Open in PR hub (do not force-close).
-          const prNumber = parseGithubPrNumber(outcome.prUrl);
-          setShipSuccess({ prUrl: outcome.prUrl, prNumber });
-        } else {
-          setShipOpen(false);
-          setShipSuccess(null);
-        }
-      } else {
-        const detail = redactShipOutput(
-          outcome.failReason ||
-            pr?.reason ||
-            push.reason ||
-            summary ||
-            "ship failed",
-          600,
-        );
-        setShipError(detail);
-        setShipStatus(null);
-        // Honest toast — never claim PR opened when gh failed.
-        showToast(
-          shipCreatePr
-            ? tr("composer.worktreeShipFailed", { reason: detail })
-            : tr("composer.worktreeShipPushFailed", { reason: detail }),
-          6000,
-        );
-      }
-    } catch (e) {
-      const msg = redactShipOutput(String(e), 600);
-      setShipError(msg);
-      setShipStatus(null);
-      showToast(tr("composer.worktreeShipFailed", { reason: msg }), 6000);
-    } finally {
-      setShipBusy(false);
-    }
-  }, [
-    activeProject?.path,
-    shipBody,
-    shipCreatePr,
-    shipDraft,
-    shipTitle,
-    showToast,
-    tr,
-  ]);
-
-  /** Dry-run `git worktree prune` for the modal preview. */
-  const refreshWorktreeGcPreview = useCallback(async () => {
-    if (!api.isTauri() || !activeProject?.path || !worktreeGcOpen) return;
-    setWorktreeGcPreviewBusy(true);
-    setWorktreeGcError(null);
-    try {
-      const res = await api.gitWorktreeGc(
-        activeProject.path,
-        true,
-        worktreeGcForce,
-      );
-      setWorktreeGcPreview(res);
-    } catch (e) {
-      setWorktreeGcPreview(null);
-      setWorktreeGcError(String(e));
-    } finally {
-      setWorktreeGcPreviewBusy(false);
-    }
-  }, [activeProject?.path, worktreeGcForce, worktreeGcOpen]);
-
-  useEffect(() => {
-    if (!worktreeGcOpen) return;
-    void refreshWorktreeGcPreview();
-  }, [worktreeGcOpen, refreshWorktreeGcPreview]);
-
-  /** Apply prune (non-dry-run), refresh list, toast. */
-  const submitWorktreeGc = useCallback(async () => {
-    if (!api.isTauri() || !activeProject?.path) return;
-    setWorktreeGcBusy(true);
-    setWorktreeGcError(null);
-    try {
-      setWorktreeGcOpen(false);
-      setWorktreeGcPreview(null);
-      setWorktreeGcForce(false);
-      await refreshGitWorktrees();
-    } catch (e) {
-      setWorktreeGcError(String(e));
-    } finally {
-      setWorktreeGcBusy(false);
-    }
-  }, [
-    activeProject?.path,
-    refreshGitWorktrees,
-    showToast,
-    tr,
-    worktreeGcForce,
-  ]);
-
-  /** Open a linked worktree as project cwd (reuse existing project if path matches). */
-  const switchToWorktree = useCallback(
-    async (wt: api.GitWorktreeEntry) => {
-      if (!api.isTauri()) return;
-      const path = wt.path?.trim();
-      if (!path) return;
-      try {
-        const existing = projects.find((p) => pathsEqual(p.path, path));
-        if (existing) {
-          await bindSessionProject(existing);
-          return;
-        }
-        const trust = !!activeProject?.trusted;
-        const added = (await api.projectAdd(path, trust)) as Project;
-        const list = mapProjectsList((await api.projectsList()) as Project[]);
-        setProjects(list);
-        projectSpaces.assignNewProjects([added.id]);
-        const proj = list.find((p) => p.id === added.id) ?? added;
-        if (!proj.trusted) {
-          await finalizeAddedProject(proj, { bindSession: true });
-        } else {
-          await bindSessionProject(proj);
-        }
-      } catch (e) {
-        showToast(String(e), 4500);
-      }
-    },
-    [
-      activeProject?.trusted,
-      bindSessionProject,
-      finalizeAddedProject,
-      projects,
-      showToast,
-      tr,
-    ],
-  );
-
-  /**
-   * Remove a live linked worktree via host `git_worktree_remove`.
-   * Never removes main. Dirty trees: first attempt without force, then
-   * in-app confirm for force. If the active cwd is removed, switch to main.
-   */
-  const executeWorktreeRemove = useCallback(
-    async (wt: api.GitWorktreeEntry, force: boolean) => {
-      if (!api.isTauri() || !canRemoveWorktree(wt)) return;
-      const mainPath =
-        mainWorktreePath(gitWorktrees) || activeProject?.path?.trim() || "";
-      if (!mainPath) {
-        showToast(tr("composer.worktreeRemoveFailed"), 4000);
-        return;
-      }
-      const wasCurrent = pathsEqual(wt.path, activeProject?.path);
-      try {
-        await api.gitWorktreeRemove({
-          projectPath: mainPath,
-          worktreePath: wt.path,
-          force,
-        });
-        // Drop WT meta on sessions that pointed at the removed tree.
-        try {
-          const linked = sessions.filter(
-            (s) =>
-              s.isWorktreeSession ||
-              pathsEqual(s.worktreePath, wt.path),
-          );
-          for (const s of linked) {
-            if (
-              pathsEqual(s.worktreePath, wt.path) ||
-              (!s.worktreePath &&
-                pathsEqual(
-                  projects.find((p) => p.id === s.projectId)?.path,
-                  wt.path,
-                ))
-            ) {
-              await api.sessionSetWorktree(s.id, {
-                worktreePath: null,
-                worktreeBranch: null,
-              });
-            }
-          }
-          if (linked.length) await refreshSessions();
-        } catch {
-          /* soft-fail */
-        }
-        if (wasCurrent) {
-          const main =
-            gitWorktrees.find((w) => w.isMain) ??
-            gitWorktrees.find((w) => pathsEqual(w.path, mainPath)) ??
-            null;
-          if (main) {
-            await switchToWorktree(main);
-          } else {
-            await refreshGitWorktrees();
-          }
-        } else {
-          await refreshGitWorktrees();
-        }
-      } catch (e) {
-        const err = String(e);
-        if (!force && worktreeRemoveErrorSuggestsForce(err)) {
-          setAppDialog({
-            kind: "confirm",
-            title: tr("composer.worktreeRemoveTitle"),
-            message: `${tr("composer.worktreeRemoveForce")}\n\n${err}`,
-            confirmLabel: tr("composer.worktreeRemove"),
-            danger: true,
-            onConfirm: () => {
-              void executeWorktreeRemove(wt, true);
-            },
-          });
-          return;
-        }
-        showToast(
-          `${tr("composer.worktreeRemoveFailed")}: ${err}`,
-          5000,
-        );
-      }
-    },
-    [
-      activeProject?.path,
-      gitWorktrees,
-      projects,
-      // refreshSessions via closure
-      sessions,
-      refreshGitWorktrees,
-      showToast,
-      switchToWorktree,
-      tr,
-    ],
-  );
-
-  const confirmRemoveWorktree = useCallback(
-    (wt: api.GitWorktreeEntry) => {
-      if (!canRemoveWorktree(wt)) return;
-      const branch =
-        wt.branch?.trim() || tr("composer.worktreeDetached");
-      const isCurrent = pathsEqual(wt.path, activeProject?.path);
-      const parts = [
-        tr("composer.worktreeRemoveHint"),
-        tr("composer.worktreeRemoveConfirm", {
-          branch,
-          path: wt.path,
-        }),
-      ];
-      if (isCurrent) {
-        parts.push(tr("composer.worktreeRemoveCurrentWarn"));
-      }
-      setAppDialog({
-        kind: "confirm",
-        title: tr("composer.worktreeRemoveTitle"),
-        message: parts.join("\n\n"),
-        confirmLabel: tr("composer.worktreeRemove"),
-        danger: true,
-        onConfirm: () => {
-          void executeWorktreeRemove(wt, false);
-        },
-      });
-    },
-    [activeProject?.path, executeWorktreeRemove, tr],
-  );
-
-  const openWorktreeCreate = useCallback((opts?: { startNewChat?: boolean }) => {
-    setWorktreeCreateName("");
-    setWorktreeCreateRef("");
-    setWorktreeCreateLayout("cli");
-    setWorktreeCreateError(null);
-    setWorktreeCreateBusy(false);
-    setWorktreeCreateStartChat(!!opts?.startNewChat);
-    setWorktreeCreateOpen(true);
-  }, []);
-
-  const worktreeCreatePreviewPath = (() => {
-    try {
-      const main = mainWorktreePath(gitWorktrees) || activeProject?.path || "";
-      if (!main || !worktreeCreateName.trim()) return null;
-      const layout = normalizeWorktreeLayout(worktreeCreateLayout);
-      if (layout === "cli" && !cliGrokHome) {
-        // Host has not reported home yet — show tilde form for CLI layout.
-        return buildWorktreePath(
-          "cli",
-          main,
-          worktreeCreateName.trim(),
-          "~/.grok",
-        );
-      }
-      return buildWorktreePath(
-        layout,
-        main,
-        worktreeCreateName.trim(),
-        cliGrokHome,
-      );
-    } catch {
-      return null;
-    }
-  })();
-
-  /**
-   * Persist worktree path/branch on a session (sidebar WT badge + manage menu).
-   * Soft-fails so create/switch UX is never blocked by meta write errors.
-   */
-  const markSessionWorktree = useCallback(
-    async (
-      sessionId: string | null | undefined,
-      path: string,
-      branch: string | null | undefined,
-    ) => {
-      if (!sessionId || !api.isTauri()) return;
-      const p = path.trim();
-      if (!p) return;
-      try {
-        await api.sessionSetWorktree(sessionId, {
-          worktreePath: p,
-          worktreeBranch: (branch || "").trim() || null,
-        });
-        await refreshSessions();
-      } catch {
-        /* soft-fail */
-      }
-    },
-    // refreshSessions is stable enough via closure
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  /** Resolve WT/CLI badge for a session row (meta first, git list fallback). */
-  const sessionWorktreeBadgeFor = useCallback(
-    (s: SessionRow): SessionWorktreeBadge | null => {
-      const proj = s.projectId
-        ? projects.find((p) => p.id === s.projectId) ?? null
-        : null;
-      return resolveSessionWorktreeBadge(
-        {
-          worktreePath: s.worktreePath,
-          worktreeBranch: s.worktreeBranch,
-          isWorktreeSession: s.isWorktreeSession,
-        },
-        proj?.path ?? s.worktreePath,
-        gitWorktrees,
-        { grokHome: cliGrokHome },
-      );
-    },
-    [cliGrokHome, gitWorktrees, projects],
-  );
-
-  /** Pre-translated worktree chip for memoized SidebarSessionRow. */
-  const buildSidebarWorktreeBadge = useCallback(
-    (s: SessionRow): SidebarSessionWorktreeBadgeProp | null => {
-      const wtBadge = sessionWorktreeBadgeFor(s);
-      if (!wtBadge) return null;
-      const title = sessionWorktreeTooltip(wtBadge, {
-        detachedLabel: tr("composer.worktreeDetached"),
-        cliLayoutLabel: tr("session.worktreeLayoutCli"),
-        siblingLayoutLabel: tr("session.worktreeLayoutSibling"),
-        otherLayoutLabel: tr("session.worktreeBadge"),
-      });
-      const ariaKey =
-        wtBadge.layoutKind === "cli"
-          ? "session.worktreeBadgeCliAria"
-          : "session.worktreeBadgeAria";
-      return {
-        label: wtBadge.label,
-        branch: wtBadge.branch,
-        layoutKind: wtBadge.layoutKind,
-        title,
-        ariaLabel: tr(ariaKey, {
-          branch: wtBadge.branch || tr("composer.worktreeDetached"),
-        }),
-      };
-    },
-    [sessionWorktreeBadgeFor, tr],
-  );
-
-  /**
-   * Create worktree → refresh list → add as project (trust inherited) →
-   * either bind current session or start a draft chat on that path.
-   * Worktree+chat creates a real session immediately so meta can be persisted.
-   */
-  const submitWorktreeCreate = useCallback(async () => {
-    if (!api.isTauri() || !activeProject?.path) return;
-    const rawName = worktreeCreateName.trim();
-    if (!rawName) {
-      setWorktreeCreateError(tr("composer.worktreeNameRequired"));
-      return;
-    }
-    let safeName: string;
-    try {
-      safeName = sanitizeWorktreeName(rawName);
-    } catch {
-      setWorktreeCreateError(tr("composer.worktreeNameInvalid"));
-      return;
-    }
-    let start: string | null;
-    try {
-      start = sanitizeWorktreeRef(worktreeCreateRef);
-    } catch {
-      setWorktreeCreateError(tr("composer.worktreeRefInvalid"));
-      return;
-    }
-    const layout = normalizeWorktreeLayout(worktreeCreateLayout);
-    setWorktreeCreateBusy(true);
-    setWorktreeCreateError(null);
-    try {
-      const created = await api.gitWorktreeAdd(
-        activeProject.path,
-        safeName,
-        start,
-        layout,
-      );
-      setWorktreeCreateOpen(false);
-      await refreshGitWorktrees();
-
-      const path = created.path;
-      const branch =
-        created.branch?.trim() ||
-        created.name ||
-        tr("composer.worktreeDetached");
-      const trust = !!activeProject.trusted;
-      const startChat = worktreeCreateStartChat;
-      const existing = projects.find((p) => pathsEqual(p.path, path));
-      let target: Project | null = existing ?? null;
-      if (!target) {
-        const added = (await api.projectAdd(path, trust)) as Project;
-        const list = mapProjectsList((await api.projectsList()) as Project[]);
-        setProjects(list);
-        projectSpaces.assignNewProjects([added.id]);
-        target = list.find((p) => p.id === added.id) ?? added;
-      }
-
-      if (!target.trusted) {
-        // Trust prompt first; bind only (chat requires trusted project).
-        await finalizeAddedProject(target, { bindSession: true });
-        return;
-      }
-
-      if (startChat) {
-        // Materialize session now so worktree meta survives before first send.
-        const meta = (await api.sessionCreate(
-          target.id,
-          tr("session.new"),
-        )) as SessionRow & { id: string; title?: string };
-        await markSessionWorktree(meta.id, path, branch);
-        const row = normalizeSessionRow({
-          ...meta,
-          projectId: target.id,
-          worktreePath: path,
-          worktreeBranch: branch,
-          isWorktreeSession: true,
-        });
-        setExpandedProjects((e) => ({ ...e, [target!.id]: true }));
-        await openSession(row, target);
-      } else {
-        await bindSessionProject(target);
-        // Tag the currently open chat when switching cwd into the new worktree.
-        const liveId =
-          viewingSessionIdRef.current || session.sessionId || null;
-        if (liveId) {
-          await markSessionWorktree(liveId, path, branch);
-        }
-      }
-    } catch (e) {
-      setWorktreeCreateError(String(e));
-    } finally {
-      setWorktreeCreateBusy(false);
-    }
-  }, [
-    activeProject?.path,
-    activeProject?.trusted,
-    bindSessionProject,
-    finalizeAddedProject,
-    markSessionWorktree,
-    openSession,
-    projects,
-    refreshGitWorktrees,
-    session.sessionId,
-    showToast,
-    tr,
-    worktreeCreateLayout,
-    worktreeCreateName,
-    worktreeCreateRef,
-    worktreeCreateStartChat,
-  ]);
+  {
+    const h = gitWorktreeHostRef.current;
+    h.tr = tr;
+    h.activeProject = activeProject;
+    h.projects = projects;
+    h.session = session;
+    h.sessions = sessions;
+    h.showToast = showToast;
+    h.setAppDialog = setAppDialog;
+    h.bindSessionProject = bindSessionProject;
+    h.finalizeAddedProject = finalizeAddedProject;
+    h.setProjects = setProjects;
+    h.setExpandedProjects = setExpandedProjects;
+    h.assignNewProjects = projectSpaces.assignNewProjects;
+    h.refreshSessions = refreshSessions;
+    h.openSession = openSession;
+    h.viewingSessionIdRef = viewingSessionIdRef;
+    h.navigateSettings = navigateSettings;
+    h.setPrHubHighlightPr = setPrHubHighlightPr;
+    h.setSettingsFocusAnchor = setSettingsFocusAnchor;
+  }
 
   /**
    * Pick folder → add project (name = folder basename; no rename prompt).
@@ -12885,15 +12005,15 @@ export function AppWorkbench() {
 
   const onThreadAddQuote = useCallback(
     (quote: { text: string; comment: string; sourceMessageId?: string }) => {
-      setQuotes((prev) => [
-        ...prev,
-        {
-          id: makeComposerQuoteId(),
-          text: quote.text,
-          comment: quote.comment,
-          sourceMessageId: quote.sourceMessageId,
-        },
-      ]);
+      const next: ComposerQuote = {
+        id: makeComposerQuoteId(),
+        text: quote.text,
+        comment: quote.comment,
+        sourceMessageId: quote.sourceMessageId,
+      };
+      // Same-frame Enter after add must see the card (quotesRef lags setState).
+      quotesRef.current = [...quotesRef.current, next];
+      setQuotes(quotesRef.current);
     },
     [setQuotes],
   );
@@ -12902,17 +12022,83 @@ export function AppWorkbench() {
     setEditAttachments((prev) => prev.filter((x) => x.path !== att.path));
   }, []);
 
+  /** Active session id for Changes / Review — keep seed + read on the same key. */
+  const reviewSessionId = (
+    session.sessionId ||
+    viewingSessionIdRef.current ||
+    ""
+  ).trim();
+
+  /** Ensure Review sees session tool edits even if live merge missed paths (#998). */
+  const seedSessionChangesForReview = useCallback(
+    (focusPath?: string | null) => {
+      const sid = (
+        session.sessionId ||
+        viewingSessionIdRef.current ||
+        ""
+      ).trim();
+      if (!sid) return;
+      const focus = (focusPath || "").trim();
+      // Also try the alternate id so display/seed cannot diverge.
+      const alt = (session.sessionId || "").trim();
+      const ids = Array.from(new Set([sid, alt].filter(Boolean)));
+      setSessionChangesById((prev) => {
+        let next = prev;
+        for (const id of ids) {
+          let list = next[id] ?? [];
+          const msgs = messagesBySessionRef.current.get(id) ?? [];
+          for (const c of sessionChangesFromMessages(msgs)) {
+            list = mergeSessionChange(list, {
+              toolCallId: c.toolCallId,
+              title: c.title,
+              kind: c.toolKind,
+              status: c.status,
+              path: c.path,
+              before: c.before,
+              after: c.after,
+              updatedAt: c.updatedAt,
+            });
+          }
+          if (focus) {
+            list = mergeSessionChange(list, {
+              kind: "write",
+              status: "completed",
+              path: focus,
+            });
+          }
+          next = { ...next, [id]: list };
+        }
+        return next;
+      });
+    },
+    [session.sessionId],
+  );
+
   const onThreadOpenSessionChanges = useCallback(() => {
+    seedSessionChangesForReview(null);
+    // Open Review synchronously — do not rely only on openRequest races (#998).
+    setSideWorkbench((s) => openSideTab(s, "review"));
     openAsidePane();
     setResourceOpenTarget({ type: "changes" });
-  }, [openAsidePane]);
+  }, [openAsidePane, seedSessionChangesForReview]);
 
   const onThreadOpenModifiedPath = useCallback(
     (path: string) => {
+      const p = (path || "").trim();
+      seedSessionChangesForReview(p);
+      // Synchronously ensure Review tab exists before aside paint (#998).
+      setSideWorkbench((s) => openSideTab(s, "review"));
       openAsidePane();
-      setResourceOpenTarget({ type: "changes", path });
+      if (p) {
+        setReviewFocus((prev) => ({
+          path: p,
+          token: (prev?.token ?? 0) + 1,
+          pinnedPaths: pinReviewFocusPath(prev?.pinnedPaths ?? [], p),
+        }));
+      }
+      setResourceOpenTarget({ type: "changes", path: p || undefined });
     },
-    [openAsidePane],
+    [openAsidePane, seedSessionChangesForReview],
   );
 
   const onThreadOpenResource = useCallback(
@@ -13221,9 +12407,9 @@ export function AppWorkbench() {
         rewindConfirm ||
         forkConfirm ||
         resumeRestoreConfirm ||
-        worktreeCreateOpen ||
-        worktreeGcOpen ||
-        shipOpen ||
+        worktreeChrome.create.open ||
+        worktreeChrome.gc.open ||
+        worktreeChrome.ship.open ||
         projectRulesTarget ||
         agentDashboardOpen ||
         taskBoardOpen ||
@@ -13514,14 +12700,13 @@ export function AppWorkbench() {
     }
     if (submit === "send") {
       e.preventDefault();
-      const draftNow = getDraft();
-      const hasBody =
-        !isDraftEmpty(parseStoredContent(draftNow)) ||
-        attachments.length > 0 ||
-        chatAttachments.length > 0;
-      if (hasBody && session.state !== "awaiting_permission") {
-        void send();
-      }
+      const hasBody = composerHasSendPayload({
+        draftEmpty: isDraftEmpty(parseStoredContent(getDraft())),
+        attachmentCount: attachments.length,
+        chatAttachmentCount: chatAttachments.length,
+        quoteCount: quotesRef.current.length,
+      });
+      if (hasBody && session.state !== "awaiting_permission") void send();
     }
     if (e.key === "Escape") {
       if (promptHistoryOpenRef.current) {
@@ -13979,8 +13164,6 @@ export function AppWorkbench() {
           activeCustomProvider={activeCustomProvider}
           mainPane={mainPane}
           onOpenSearch={() => searchPalette.openBlank()}
-          sidebarToggleUnread={unreadSessionIds.size > 0}
-          onToggleSidebar={closeSidebarPane}
           onNewChat={() => void newChat(null)}
           onNavigateAutomations={navigateAutomations}
           onNavigateKanban={navigateKanban}
@@ -14094,6 +13277,7 @@ export function AppWorkbench() {
           openPhoneDrawer={openPhoneDrawer}
           closePhoneDrawer={closePhoneDrawer}
           openSidebarPane={openSidebarPane}
+          closeSidebarPane={closeSidebarPane}
           sidebarToggleUnread={unreadSessionIds.size > 0}
           openSessionMenu={openSessionMenu}
           onOpenPhoneAccount={() => setPhoneAccountOpen(true)}
@@ -14238,71 +13422,12 @@ export function AppWorkbench() {
             </div>
           )}
 
-          {cliUpdateOffer && mainPane === "chat" && (
-            <div className="conn-bar cli-update-notice" role="status">
-              <span style={{ fontSize: 12, flex: 1 }}>
-                {tr("cliUpdate.notice", {
-                  current: cliUpdateOffer.current,
-                  latest: cliUpdateOffer.latest,
-                })}
-              </span>
-              <button
-                type="button"
-                className="btn btn--primary"
-                style={{ height: 24, fontSize: 11 }}
-                disabled={cliUpdateBusy}
-                onClick={() => {
-                  void (async () => {
-                    setCliUpdateBusy(true);
-                    try {
-                      const r = await api.cliUpdateInstall();
-                      if (!r.ok) {
-                        showToast(
-                          tr("settings.cliUpdateInstallFailed", {
-                            error: r.message || "failed",
-                          }),
-                          4500,
-                        );
-                        return;
-                      }
-                      dismissCliUpdateNotice(cliUpdateOffer.latest);
-                      setCliUpdateOffer(null);
-                      try {
-                        await api.agentsRecycleAll();
-                      } catch {
-                        /* soft */
-                      }
-                    } catch (e) {
-                      showToast(
-                        tr("settings.cliUpdateInstallFailed", {
-                          error: String(e),
-                        }),
-                        4500,
-                      );
-                    } finally {
-                      setCliUpdateBusy(false);
-                    }
-                  })();
-                }}
-              >
-                {cliUpdateBusy
-                  ? tr("settings.cliUpdateInstalling")
-                  : tr("cliUpdate.action")}
-              </button>
-              <button
-                type="button"
-                className="btn btn--ghost"
-                style={{ height: 24, fontSize: 11 }}
-                disabled={cliUpdateBusy}
-                onClick={() => {
-                  dismissCliUpdateNotice(cliUpdateOffer.latest);
-                  setCliUpdateOffer(null);
-                }}
-              >
-                {tr("cliUpdate.later")}
-              </button>
-            </div>
-          )}
+          <CliUpdateOfferBar
+            active={appGate === "ready" && mainPane === "chat"}
+            t={tr}
+            setAppDialog={setAppDialog}
+            showToast={showToast}
+          />
 
           <WorkbenchChatStage
             activeProject={activeProject}
@@ -14363,6 +13488,10 @@ export function AppWorkbench() {
             retryAgentConnect={retryAgentConnect}
             runErrorBannerAction={runErrorBannerAction}
             session={session}
+            sessionChanges={
+              sessionChangesById[session.sessionId || ""] ??
+              EMPTY_SESSION_FILE_CHANGES
+            }
             sessionJsonSchema={sessionJsonSchema}
             sessionTranscriptStore={sessionTranscriptStore}
             sessions={sessions}
@@ -14635,8 +13764,13 @@ export function AppWorkbench() {
           sideDockComposer={sideDockComposer}
           onToggleSideDockComposer={onToggleSideDockComposer}
           sessionChanges={
-            sessionChangesById[session.sessionId || ""] ?? []
+            sessionChangesById[reviewSessionId] ??
+            sessionChangesById[session.sessionId || ""] ??
+            EMPTY_SESSION_FILE_CHANGES
           }
+          reviewFocusPath={reviewFocus?.path ?? null}
+          reviewFocusToken={reviewFocus?.token ?? 0}
+          reviewPinnedPaths={reviewFocus?.pinnedPaths ?? []}
           sessionId={session.sessionId}
           plan={plan}
           planFocusKey={planFocusKey}
@@ -14842,71 +13976,7 @@ export function AppWorkbench() {
           if (!archiveAgeConfirm) return;
           void runArchiveAgePlan(archiveAgeConfirm);
         }}
-        worktreeCreateOpen={worktreeCreateOpen}
-        worktreeCreateBusy={worktreeCreateBusy}
-        worktreeCreateStartChat={worktreeCreateStartChat}
-        worktreeCreateName={worktreeCreateName}
-        worktreeCreateLayout={worktreeCreateLayout}
-        worktreeCreateRef={worktreeCreateRef}
-        worktreeCreatePreviewPath={worktreeCreatePreviewPath}
-        worktreeCreateError={worktreeCreateError}
-        closeWorktreeCreate={() => setWorktreeCreateOpen(false)}
-        submitWorktreeCreate={() => {
-          void submitWorktreeCreate();
-        }}
-        onWorktreeCreateNameChange={(value) => {
-          setWorktreeCreateName(value);
-          setWorktreeCreateError(null);
-        }}
-        onWorktreeCreateLayoutChange={(value) => {
-          setWorktreeCreateLayout(value);
-          setWorktreeCreateError(null);
-        }}
-        onWorktreeCreateRefChange={(value) => {
-          setWorktreeCreateRef(value);
-          setWorktreeCreateError(null);
-        }}
-        worktreeGcOpen={worktreeGcOpen}
-        worktreeGcBusy={worktreeGcBusy}
-        worktreeGcPreviewBusy={worktreeGcPreviewBusy}
-        worktreeGcForce={worktreeGcForce}
-        worktreeGcPreview={worktreeGcPreview}
-        worktreeGcError={worktreeGcError}
-        closeWorktreeGc={() => {
-          setWorktreeGcOpen(false);
-          setWorktreeGcError(null);
-          setWorktreeGcPreview(null);
-          setWorktreeGcForce(false);
-        }}
-        submitWorktreeGc={() => {
-          void submitWorktreeGc();
-        }}
-        setWorktreeGcForce={setWorktreeGcForce}
-        shipOpen={shipOpen}
-        shipBusy={shipBusy}
-        shipSuccess={shipSuccess}
-        shipTitle={shipTitle}
-        shipBody={shipBody}
-        shipCreatePr={shipCreatePr}
-        shipDraft={shipDraft}
-        shipBranch={shipBranch}
-        shipStatus={shipStatus}
-        shipError={shipError}
-        closeShip={closeShipFlow}
-        submitShip={() => {
-          void submitShipFlow();
-        }}
-        onShipTitleChange={(value) => {
-          setShipTitle(value);
-          setShipError(null);
-        }}
-        onShipBodyChange={(value) => {
-          setShipBody(value);
-          setShipError(null);
-        }}
-        setShipCreatePr={setShipCreatePr}
-        setShipDraft={setShipDraft}
-        onOpenPrHubFromShip={openPrHubFromShip}
+        worktreeChrome={worktreeChrome}
         showToast={showToast}
         showShortcuts={showShortcuts}
         composerSendKeyPref={composerSendKeyPref}

@@ -72,6 +72,8 @@ export const jaChat = {
   "chat.selectionComment": "コメント",
   "chat.selectionCommentPlaceholder": "この抜粋にコメントを書く…",
   "chat.selectionCommentSubmit": "コメントを追加",
+  "chat.selectionEnterHint": "Enter で追加",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter で追加",
   "chat.selectionToolbar": "選択",
   "message.edit": "編集",
   "message.exportMd": "MD を書き出し",
@@ -159,4 +161,14 @@ export const jaChat = {
   "chat.longReplyShowFull": "全文を表示",
   "chat.longReplyCollapse": "プレビューだけ表示",
   "chat.longReplyShowingFull": "全文を表示中",
+  "chat.changedFiles.aria": "このターンで変更されたファイル",
+  "chat.changedFiles.viewAll": "すべて表示",
+  "chat.changedFiles.openFile": "{name} の変更を確認",
+  "chat.changedFiles.more": "ほか {n} 件",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "{name} の差分を展開",
+  "chat.changedFiles.collapse": "{name} の差分を折りたたむ",
+  "chat.changedFiles.openInReview": "Review で開く",
+  "chat.changedFiles.noDiffYet": "差分はまだありません — Review でファイル全体を確認できます。",
+  "chat.changedFiles.truncated": "{total} 行中 {shown} 行を表示"
 };

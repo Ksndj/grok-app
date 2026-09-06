@@ -59,6 +59,7 @@
    **WP-W25 已落地**：Settings 开合 / section / tab / focus / hash / last-route / native cover → `useSettingsNavigation`。labels 袋 → `settingsLabels.ts`。host 仍持 settingsGet 水合与 prefs 值。天花板 **15790 / 214 / 84**。
    **WP-W26 已落地**：Host AppSettings prefs 水合 → `parseAppSettingsPrefs` + `useAppSettingsPrefs`。locale/composer chips/CLI probe 仍在 boot。天花板见 W27。
    **WP-W27 已落地**：ensureConnected + connecting claims + liveMap 订阅 → `useSessionConnect`。#870 验收：改 settings 导航/prefs/connect 不必打开 host 函数体。天花板 **15350 / 160 / 83**。
+   **WP-W28 已落地**：git worktree 列表 / 创建 / GC / ship / switch / remove / 徽章 → `useGitWorktreeChrome`。overlay 收成 `worktreeChrome` 一袋。git dirty 仍在 host，经 `applyStatusBranch` 补 branch chip。天花板 **14650 / 130 / 80**。下一步 Side Workbench。
    **pi**：协作者本机无 pi，按 owner 规则跳过。
    **5 个 worktree**：误会。远端 `main` 已含那些产品改动（本地只是 squash 后残留 SHA）。不挡大拆。
 5. 5.6k 行 JSX 拆为 view shell + 域容器；modals 先经既有 `useAppDialogs` 收口。

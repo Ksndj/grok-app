@@ -72,6 +72,8 @@ export const enChat = {
   "chat.selectionComment": "Comment",
   "chat.selectionCommentPlaceholder": "Write a comment on this excerpt…",
   "chat.selectionCommentSubmit": "Add comment",
+  "chat.selectionEnterHint": "Enter to add",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter to add",
   "chat.selectionToolbar": "Selection",
   "message.edit": "Edit",
   "message.exportMd": "Export MD",
@@ -166,4 +168,14 @@ export const enChat = {
   "chat.longReplyShowFull": "Show full reply",
   "chat.longReplyCollapse": "Show preview only",
   "chat.longReplyShowingFull": "Showing the full reply",
+  "chat.changedFiles.aria": "Files changed this turn",
+  "chat.changedFiles.viewAll": "View all",
+  "chat.changedFiles.openFile": "Review changes in {name}",
+  "chat.changedFiles.more": "+{n} more",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "Expand diff for {name}",
+  "chat.changedFiles.collapse": "Collapse diff for {name}",
+  "chat.changedFiles.openInReview": "Open in Review",
+  "chat.changedFiles.noDiffYet": "Diff not available yet — open Review for the full file.",
+  "chat.changedFiles.truncated": "Showing {shown} of {total} lines"
 } as const;

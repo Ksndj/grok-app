@@ -72,6 +72,8 @@ export const taChat = {
   "chat.selectionComment": "கருத்து",
   "chat.selectionCommentPlaceholder": "இந்த பகுதிக்கு ஒரு கருத்தை எழுதுங்கள்…",
   "chat.selectionCommentSubmit": "கருத்தைச் சேர்",
+  "chat.selectionEnterHint": "Enter சேர்",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter சேர்",
   "chat.selectionToolbar": "தேர்வு",
   "message.edit": "திருத்து",
   "message.exportMd": "ஏற்றுமதி எம்.டி",
@@ -159,4 +161,14 @@ export const taChat = {
   "chat.longReplyShowFull": "முழு பதிலைக் காட்டு",
   "chat.longReplyCollapse": "முன்னோட்டத்தை மட்டும் காட்டு",
   "chat.longReplyShowingFull": "முழு பதிலைக் காட்டுகிறது",
+  "chat.changedFiles.aria": "இந்த முறையில் மாற்றப்பட்ட கோப்புகள்",
+  "chat.changedFiles.viewAll": "அனைத்தையும் காண்",
+  "chat.changedFiles.openFile": "{name} இல் உள்ள மாற்றங்களைப் பார்",
+  "chat.changedFiles.more": "+{n} மேலும்",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "{name} வேறுபாட்டை விரிவாக்கு",
+  "chat.changedFiles.collapse": "{name} வேறுபாட்டை சுருக்கு",
+  "chat.changedFiles.openInReview": "Review-இல் திற",
+  "chat.changedFiles.noDiffYet": "வேறுபாடு இன்னும் இல்லை — முழு கோப்பிற்கு Review-ஐத் திறக்கவும்.",
+  "chat.changedFiles.truncated": "{total} வரிகளில் {shown} காட்டப்படுகிறது"
 };

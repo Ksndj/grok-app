@@ -237,6 +237,10 @@ mod skin_presets;
 mod skin_staging;
 mod skin_video_bake;
 
+#[cfg(target_os = "macos")]
+mod mac_ime_fn_bridge;
+#[cfg(windows)]
+mod win_file_drop;
 #[cfg(windows)]
 mod win_shell;
 
@@ -740,12 +744,25 @@ pub fn run() {
                 let _ = window.run_on_main_thread(move || {
                     let _ = w.show();
                     let _ = w.set_focus();
+                    // Late OLE drop targets — must run after show (#1017).
+                    #[cfg(windows)]
+                    win_file_drop::install_after_show(&w);
+                    // Doubao Fn voice needs IME to see flagsChanged (#1030).
+                    #[cfg(target_os = "macos")]
+                    mac_ime_fn_bridge::install();
                 });
             } else {
                 // Show immediately — do not block_on host services first (that
                 // freezes the main loop and delays WebView paint).
                 let _ = window.show();
                 let _ = window.set_focus();
+                // wry registers drag-drop during hidden create and often misses
+                // WebView2 child HWNDs → forbidden cursor (#1017 / tauri#14643).
+                #[cfg(windows)]
+                win_file_drop::install_after_show(&window);
+                // Doubao Fn voice needs IME to see flagsChanged (#1030).
+                #[cfg(target_os = "macos")]
+                mac_ime_fn_bridge::install();
             }
 
             // ── 2) Non-UI host work off the critical path (WebView already open).

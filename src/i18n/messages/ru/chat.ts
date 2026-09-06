@@ -72,6 +72,8 @@ export const ruChat = {
   "chat.selectionComment": "Комментарий",
   "chat.selectionCommentPlaceholder": "Добавьте комментарий к этому фрагменту…",
   "chat.selectionCommentSubmit": "Добавить комментарий",
+  "chat.selectionEnterHint": "Enter — добавить",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter — добавить",
   "chat.selectionToolbar": "Выделенный текст",
   "message.edit": "Изменить",
   "message.exportMd": "Экспортировать MD",
@@ -159,4 +161,14 @@ export const ruChat = {
   "chat.longReplyShowFull": "Показать полный ответ",
   "chat.longReplyCollapse": "Показать только сокращённую версию",
   "chat.longReplyShowingFull": "Показан полный ответ",
+  "chat.changedFiles.aria": "Файлы, изменённые в этом ходе",
+  "chat.changedFiles.viewAll": "Смотреть все",
+  "chat.changedFiles.openFile": "Проверить изменения в {name}",
+  "chat.changedFiles.more": "ещё {n}",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "Развернуть diff для {name}",
+  "chat.changedFiles.collapse": "Свернуть diff для {name}",
+  "chat.changedFiles.openInReview": "Открыть в Review",
+  "chat.changedFiles.noDiffYet": "Diff пока недоступен — откройте Review для полного файла.",
+  "chat.changedFiles.truncated": "Показано {shown} из {total} строк"
 };

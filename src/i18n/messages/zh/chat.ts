@@ -72,6 +72,8 @@ export const zhChat = {
   "chat.selectionComment": "写评论",
   "chat.selectionCommentPlaceholder": "针对这段摘录写评论…",
   "chat.selectionCommentSubmit": "添加评论",
+  "chat.selectionEnterHint": "Enter 提交",
+  "chat.selectionModEnterHint": "Ctrl+Enter 添加",
   "chat.selectionToolbar": "选中文字",
   "message.edit": "编辑",
   "message.exportMd": "导出 MD",
@@ -166,4 +168,14 @@ export const zhChat = {
   "chat.longReplyShowFull": "显示全文",
   "chat.longReplyCollapse": "只显示预览",
   "chat.longReplyShowingFull": "正在显示全文",
+  "chat.changedFiles.aria": "本轮修改的文件",
+  "chat.changedFiles.viewAll": "查看全部",
+  "chat.changedFiles.openFile": "查看 {name} 的修改",
+  "chat.changedFiles.more": "还有 {n} 个",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "展开 {name} 的差异",
+  "chat.changedFiles.collapse": "收起 {name} 的差异",
+  "chat.changedFiles.openInReview": "在 Review 中打开",
+  "chat.changedFiles.noDiffYet": "暂无差异预览 — 可在 Review 中查看完整文件。",
+  "chat.changedFiles.truncated": "显示 {shown} / {total} 行"
 };

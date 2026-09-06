@@ -72,6 +72,8 @@ export const filChat = {
   "chat.selectionComment": "Komento",
   "chat.selectionCommentPlaceholder": "Sumulat ng komento sa siping ito…",
   "chat.selectionCommentSubmit": "Magdagdag ng komento",
+  "chat.selectionEnterHint": "Enter para idagdag",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter para idagdag",
   "chat.selectionToolbar": "Pagpili",
   "message.edit": "I-edit",
   "message.exportMd": "I-export ang MD",
@@ -159,4 +161,14 @@ export const filChat = {
   "chat.longReplyShowFull": "Ipakita ang buong sagot",
   "chat.longReplyCollapse": "Ipakita lang ang preview",
   "chat.longReplyShowingFull": "Ipinapakita ang buong sagot",
+  "chat.changedFiles.aria": "Mga file na binago sa turn na ito",
+  "chat.changedFiles.viewAll": "Tingnan lahat",
+  "chat.changedFiles.openFile": "Suriin ang mga pagbabago sa {name}",
+  "chat.changedFiles.more": "+{n} pa",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "I-expand ang diff ng {name}",
+  "chat.changedFiles.collapse": "I-collapse ang diff ng {name}",
+  "chat.changedFiles.openInReview": "Buksan sa Review",
+  "chat.changedFiles.noDiffYet": "Wala pang diff — buksan ang Review para sa buong file.",
+  "chat.changedFiles.truncated": "Ipinapakita ang {shown} sa {total} na linya"
 };

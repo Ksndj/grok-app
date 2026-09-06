@@ -72,6 +72,8 @@ export const koChat = {
   "chat.selectionComment": "댓글",
   "chat.selectionCommentPlaceholder": "이 발췌에 대한 댓글을 작성하세요…",
   "chat.selectionCommentSubmit": "댓글 추가",
+  "chat.selectionEnterHint": "Enter로 추가",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter로 추가",
   "chat.selectionToolbar": "선택",
   "message.edit": "편집",
   "message.exportMd": "MD보내기",
@@ -159,4 +161,14 @@ export const koChat = {
   "chat.longReplyShowFull": "전체 응답 보기",
   "chat.longReplyCollapse": "미리보기만 보기",
   "chat.longReplyShowingFull": "전체 응답을 표시 중",
+  "chat.changedFiles.aria": "이번 턴에서 변경된 파일",
+  "chat.changedFiles.viewAll": "모두 보기",
+  "chat.changedFiles.openFile": "{name} 변경 검토",
+  "chat.changedFiles.more": "+{n}개 더",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "{name} 차이 펼치기",
+  "chat.changedFiles.collapse": "{name} 차이 접기",
+  "chat.changedFiles.openInReview": "Review에서 열기",
+  "chat.changedFiles.noDiffYet": "아직 미리볼 차이가 없습니다 — Review에서 전체 파일을 확인하세요.",
+  "chat.changedFiles.truncated": "{total}줄 중 {shown}줄 표시"
 };

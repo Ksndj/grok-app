@@ -72,6 +72,8 @@ export const idChat = {
   "chat.selectionComment": "Komentar",
   "chat.selectionCommentPlaceholder": "Tulis komentar pada kutipan ini…",
   "chat.selectionCommentSubmit": "Tambah komentar",
+  "chat.selectionEnterHint": "Enter untuk menambahkan",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Enter untuk menambahkan",
   "chat.selectionToolbar": "Pilihan",
   "message.edit": "Sunting",
   "message.exportMd": "Ekspor MD",
@@ -159,4 +161,14 @@ export const idChat = {
   "chat.longReplyShowFull": "Tampilkan balasan penuh",
   "chat.longReplyCollapse": "Tampilkan pratinjau saja",
   "chat.longReplyShowingFull": "Menampilkan balasan penuh",
+  "chat.changedFiles.aria": "Berkas yang diubah pada giliran ini",
+  "chat.changedFiles.viewAll": "Lihat semua",
+  "chat.changedFiles.openFile": "Tinjau perubahan di {name}",
+  "chat.changedFiles.more": "+{n} lagi",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "Perluas diff {name}",
+  "chat.changedFiles.collapse": "Ciutkan diff {name}",
+  "chat.changedFiles.openInReview": "Buka di Review",
+  "chat.changedFiles.noDiffYet": "Diff belum tersedia — buka Review untuk berkas lengkap.",
+  "chat.changedFiles.truncated": "Menampilkan {shown} dari {total} baris"
 };

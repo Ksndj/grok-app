@@ -12,7 +12,7 @@
 | Spec | `docs/plans/2026-08-01-code-quality-remediation-GOAL.md` |
 | Started | `2026-08-01` |
 | Current wave | `workbench-decomp` |
-| Current WP | `WP-W27` |
+| Current WP | `WP-W28` |
 | **FINAL** | **PASS** (honest orchestration metrics; decreasing ceilings) |
 
 ## Wave checklist
@@ -73,6 +73,7 @@
 | WP-W25 | Settings overlay nav into useSettingsNavigation | PASS | 5003a52a | 15956→15612 lines; useState 214→209; useEffect 83→81 |
 | WP-W26 | Settings prefs hydrate into useAppSettingsPrefs | PASS | aae65cf4 | 15612→15471 lines; useState 209→156 |
 | WP-W27 | Session connect + live map into useSessionConnect | PASS | aae65cf4 | 15471→15183 lines; useState 156→155; useEffect 81→80 |
+| WP-W28 | Git worktree + ship chrome into useGitWorktreeChrome | PASS |  | #1033; 15237→14416 lines; useState 154→122; useEffect 78→75 |
 
 ## Metrics log (append-only)
 
@@ -111,6 +112,7 @@
 | 2026-08-24 W25 | 15612 (shell 18 + wb 15594) | 209 | 81 | 11 | dir | dir | 28 | 9 | 69 |
 | 2026-08-24 W26 | 15471 (shell 18 + wb 15453) | 156 | 81 | 11 | dir | dir | 28 | 9 | 69 |
 | 2026-08-24 W27 | 15183 (shell 18 + wb 15165) | 155 | 80 | 11 | dir | dir | 28 | 9 | 69 |
+| 2026-09-05 W28 | 14416 (shell 21 + wb 14395) | 122 | 75 | 12 | dir | dir | 29 | 9 | 80 |
 
 ## Blockers
 
@@ -136,7 +138,7 @@ Parallel non-overlapping tracks (multi-agent) — **landed**:
 | residual-resource-viewer | ResourceViewer + parts | **PASS** | 4938→modules |
 | residual-i18n | `src/i18n/**` | **PASS** | domain modules + barrels |
 | residual-settings | SettingsPage + settings/* | **PASS** | 8874→1817 |
-| residual-appworkbench | AppWorkbench + hooks | **PASS** | WP-W27: settings nav/prefs + connect/live map extracted; #870 closed |
+| residual-appworkbench | AppWorkbench + hooks | **PASS** | WP-W28: git worktree list/create/GC/ship extracted; #870 closed |
 | residual-settings-catalog | settingsCatalog split | **PASS** | domain entries |
 
-Follow-on: `docs/plans/HANDOFF-appworkbench-decomposition.md`. Decreasing ceilings now **15350 / 160 useState / 83 useEffect**; `files_ge_1000` **≤77** (0.2.28 tree). #870 closed.
+Follow-on: `docs/plans/HANDOFF-appworkbench-decomposition.md`. Decreasing ceilings now **14650 / 130 useState / 80 useEffect**; `files_ge_1000` **≤80** (0.2.31 tree count 79; was ≤77 at 0.2.28). #870 closed. Shrink large files in follow-on waves — do not keep raising this budget.

@@ -72,6 +72,8 @@ export const itChat = {
   "chat.selectionComment": "Commento",
   "chat.selectionCommentPlaceholder": "Scrivi un commento su questo estratto…",
   "chat.selectionCommentSubmit": "Aggiungi commento",
+  "chat.selectionEnterHint": "Invio per aggiungere",
+  "chat.selectionModEnterHint": "⌘/Ctrl+Invio per aggiungere",
   "chat.selectionToolbar": "Selezione",
   "message.edit": "Modifica",
   "message.exportMd": "Esporta MD",
@@ -159,4 +161,14 @@ export const itChat = {
   "chat.longReplyShowFull": "Mostra risposta completa",
   "chat.longReplyCollapse": "Mostra solo l’anteprima",
   "chat.longReplyShowingFull": "Risposta completa visibile",
+  "chat.changedFiles.aria": "File modificati in questo turno",
+  "chat.changedFiles.viewAll": "Vedi tutti",
+  "chat.changedFiles.openFile": "Rivedi le modifiche in {name}",
+  "chat.changedFiles.more": "+{n} altri",
+  "chat.changedFiles.delta": "+{added} −{removed}",
+  "chat.changedFiles.expand": "Espandi diff di {name}",
+  "chat.changedFiles.collapse": "Comprimi diff di {name}",
+  "chat.changedFiles.openInReview": "Apri in Review",
+  "chat.changedFiles.noDiffYet": "Diff non ancora disponibile — apri Review per il file completo.",
+  "chat.changedFiles.truncated": "Mostro {shown} di {total} righe"
 };
