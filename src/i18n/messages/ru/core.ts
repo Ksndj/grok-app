@@ -2,7 +2,7 @@
 export const ruCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · Неофициально · Сестринский проект grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · Неофициально · Сестринский проект grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · Неофициально · Сестринский проект grok-go",
   "window.minimize": "Свернуть",
   "window.maximize": "Развернуть",
   "window.restore": "Восстановить",
@@ -121,6 +121,7 @@ export const ruCore = {
   "shortcuts.sideTerminal": "Терминал",
   "shortcuts.closeSideTab": "Закрыть боковую вкладку (окно, если вкладок нет)",
   "shortcuts.sidebarSessionNav": "Следующий / предыдущий чат на боковой панели (фокус в списке)",
+  "shortcuts.recentSessionMru": "Следующий / предыдущий недавно использованный чат",
   "shortcuts.doctor": "Диагностика",
   "shortcuts.liveVoice": "Начать Live Voice",
   "shortcuts.off": "Выкл.",

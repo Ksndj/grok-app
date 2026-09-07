@@ -2,7 +2,7 @@
 export const deCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · Inoffiziell · Schwesterprojekt grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · Inoffiziell · Schwesterprojekt grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · Inoffiziell · Schwesterprojekt grok-go",
   "window.minimize": "Minimieren",
   "window.maximize": "Maximieren",
   "window.restore": "Wiederherstellen",
@@ -121,6 +121,7 @@ export const deCore = {
   "shortcuts.sideTerminal": "Terminal",
   "shortcuts.closeSideTab": "Seitentab schließen (Fenster, wenn keiner offen)",
   "shortcuts.sidebarSessionNav": "Nächster / vorheriger Chat in der Seitenleiste (Fokus in der Liste)",
+  "shortcuts.recentSessionMru": "Nächster / vorheriger kürzlich verwendeter Chat",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Live Voice starten",
   "shortcuts.off": "Aus",

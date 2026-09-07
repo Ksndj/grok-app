@@ -2,7 +2,7 @@
 export const filCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · Hindi opisyal · Sister project grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · Hindi opisyal · Sister project grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · Hindi opisyal · Sister project grok-go",
   "window.minimize": "I-minimize",
   "window.maximize": "I-maximize",
   "window.restore": "Ibalik",
@@ -121,6 +121,7 @@ export const filCore = {
   "shortcuts.sideTerminal": "Terminal",
   "shortcuts.closeSideTab": "Isara ang side tab (window kapag walang bukas)",
   "shortcuts.sidebarSessionNav": "Susunod / nakaraang chat sa sidebar (focus sa listahan)",
+  "shortcuts.recentSessionMru": "Susunod / nakaraang kamakailang chat",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Simulan ang Live Voice",
   "shortcuts.off": "Naka-off",

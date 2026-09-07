@@ -2,7 +2,7 @@
 export const itCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · Non ufficiale · Progetto gemello grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · Non ufficiale · Progetto gemello grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · Non ufficiale · Progetto gemello grok-go",
   "window.minimize": "Riduci a icona",
   "window.maximize": "Ingrandisci",
   "window.restore": "Ripristina",
@@ -121,6 +121,7 @@ export const itCore = {
   "shortcuts.sideTerminal": "Terminale",
   "shortcuts.closeSideTab": "Chiudi scheda laterale (finestra se nessuna è aperta)",
   "shortcuts.sidebarSessionNav": "Chat successiva / precedente nella barra laterale (focus nell’elenco)",
+  "shortcuts.recentSessionMru": "Chat recente successiva / precedente",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Avvia Live Voice",
   "shortcuts.off": "Disattivato",

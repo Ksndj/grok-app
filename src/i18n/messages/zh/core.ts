@@ -2,7 +2,7 @@
 export const zhCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · 非 xAI 官方 · 姐妹项目 grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · 非 xAI 官方 · 姐妹项目 grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · 非 xAI 官方 · 姐妹项目 grok-go",
   "window.minimize": "最小化",
   "window.maximize": "最大化",
   "window.restore": "还原",
@@ -121,6 +121,7 @@ export const zhCore = {
   "shortcuts.sideTerminal": "终端",
   "shortcuts.closeSideTab": "关闭侧边标签（无标签时关闭窗口）",
   "shortcuts.sidebarSessionNav": "侧栏上下切换会话（焦点在列表内）",
+  "shortcuts.recentSessionMru": "最近用过的对话（上一个 / 下一个）",
   "shortcuts.doctor": "体检",
   "shortcuts.liveVoice": "开始实时语音",
   "shortcuts.off": "关闭",

@@ -2,7 +2,7 @@
 export const ukCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · Неофіційний · Сестринський проєкт grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · Неофіційний · Сестринський проєкт grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · Неофіційний · Сестринський проєкт grok-go",
   "window.minimize": "Згорнути",
   "window.maximize": "Розгорнути",
   "window.restore": "Відновити",
@@ -121,6 +121,7 @@ export const ukCore = {
   "shortcuts.sideTerminal": "Термінал",
   "shortcuts.closeSideTab": "Закрити бічну вкладку (вікно, якщо вкладок немає)",
   "shortcuts.sidebarSessionNav": "Наступний / попередній чат на бічній панелі (фокус у списку)",
+  "shortcuts.recentSessionMru": "Наступний / попередній нещодавно використаний чат",
   "shortcuts.doctor": "Діагностика",
   "shortcuts.liveVoice": "Запустити Live Voice",
   "shortcuts.off": "Вимкнено",

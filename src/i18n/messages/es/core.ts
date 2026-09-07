@@ -2,7 +2,7 @@
 export const esCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · No oficial · Proyecto hermano grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · No oficial · Proyecto hermano grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · No oficial · Proyecto hermano grok-go",
   "window.minimize": "Minimizar",
   "window.maximize": "Maximizar",
   "window.restore": "Restaurar",
@@ -121,6 +121,7 @@ export const esCore = {
   "shortcuts.sideTerminal": "Terminal",
   "shortcuts.closeSideTab": "Cerrar pestaña lateral (la ventana si no hay ninguna abierta)",
   "shortcuts.sidebarSessionNav": "Chat siguiente / anterior en la barra lateral (foco en la lista)",
+  "shortcuts.recentSessionMru": "Chat reciente siguiente / anterior",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Iniciar Live Voice",
   "shortcuts.off": "Desactivado",

@@ -2,7 +2,7 @@
 export const koCore = {
   "app.name": "Grok",
   "app.tagline": "MIT · 비공식 · 자매 프로젝트 grok-go",
-  "app.versionFooter": "Grok v0.2.32 · MIT · 비공식 · 자매 프로젝트 grok-go",
+  "app.versionFooter": "Grok v0.2.33 · MIT · 비공식 · 자매 프로젝트 grok-go",
   "window.minimize": "최소화",
   "window.maximize": "최대화",
   "window.restore": "이전 크기로",
@@ -121,6 +121,7 @@ export const koCore = {
   "shortcuts.sideTerminal": "터미널",
   "shortcuts.closeSideTab": "사이드 탭 닫기 (열린 탭이 없으면 창)",
   "shortcuts.sidebarSessionNav": "사이드바에서 다음 / 이전 대화 (목록에 포커스)",
+  "shortcuts.recentSessionMru": "최근 사용한 대화 다음 / 이전",
   "shortcuts.doctor": "닥터",
   "shortcuts.liveVoice": "라이브 음성 시작",
   "shortcuts.off": "끄기",
