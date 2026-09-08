@@ -13,18 +13,78 @@ See `docs/llm-wiki/release.md`.
 
 ## [Unreleased]
 
+### Fixed
+- Windows titlebar drag moves the window again on older WebView2 (#1075).
+- Feishu remote-control setup shows the publish / availability guide (same as Lark).
+- Search no longer applies results after you close the palette (#1078).
+- Local media previews bind to browser-safe ports (#1076).
+- Windows Explorer drop cleans up failed transfers more reliably (#1077).
+- Legacy proxy mode `use` migrates the same way in UI and Host (#1079).
+- Image lightbox close stays closed when a late load finishes (#1081).
+- Wallpaper X search drains CLI output so hung pipes time out cleanly (#1086).
+- Wallpaper X results drop non-image pages and rank clearer media first (#1085).
+- Wallpaper X search can be cancelled and shows prepare / search / validate progress (#1087).
+- Opening a file in Review keeps the macOS title bar visible. Focus scrolls only inside Review (#1041).
+- Advanced context-window Save stays fully clickable. The flyout no longer clips the button (#1047).
+- Linux AppImage prefers host WebKitGTK to avoid black screens and SIGBUS on quit. Helpers stay on disk so FUSE unmount is safe (#539).
+- Binding QR codes are generated locally without sharing login links.
+- Plugin authorization keeps secrets out of process command lines.
+
+**中文 · 修复**
+- Windows 标题栏在旧版 WebView2 上又能拖动窗口（#1075）。
+- 飞书远程控制显示与 Lark 相同的「发布 / 可用性」引导步骤。
+- 关掉搜索面板后，迟到的结果不再写回（#1078）。
+- 本地媒体预览绑定到浏览器安全端口（#1076）。
+- Windows 资源管理器拖放在失败时更干净地释放（#1077）。
+- 旧代理模式 `use` 在界面与 Host 侧迁移一致（#1079）。
+- 图片预览关闭后，迟到的加载不会再把它打开（#1081）。
+- 壁纸 X 搜索并行排空 CLI 输出，管道堵死时能按时退出（#1086）。
+- 壁纸 X 结果会丢掉非图片页，并优先更清晰的媒体（#1085）。
+- 壁纸 X 搜索可取消，并显示准备 / 搜索 / 校验进度（#1087）。
+- 在 Review 中打开文件时，macOS 标题栏保持可见。只滚动 Review 内部列表（#1041）。
+- Advanced 里上下文窗口的「保存」可正常点到。浮层不再裁掉按钮（#1047）。
+- Linux AppImage 优先用本机 WebKitGTK，避免黑屏和退出时 SIGBUS。子进程不再映射在 squashfs 上（#539）。
+- 扫码绑定的二维码在本地生成，登录链接不再发给第三方。
+- 插件授权密钥不再出现在进程命令行中。
+
 ### Added
 - Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
+- Wallpaper X can use Responses search with a clear fallback to CLI (#1088).
+- Wallpaper X Responses search shows validated images in batches as paths finish (#1089).
+- Wallpaper X Responses search reuses recent verified results for the same query (#1090).
+- Wallpaper X Responses search can load more images without clearing the gallery (#1091).
+- Wallpaper sources add Openverse and Pexels search with paging and Pexels key setup (#1096).
+- Openverse and Pexels prefetch the next page after a successful search (#1097).
+- Wallpaper sources add a separate Web image search with safe preview download (#1099).
+- Wallpaper sources can browse your Grok Saved album after a secure sign-in check (#1103).
 - Ctrl+Tab jumps back to the last chat you used. Hold Ctrl and tap Tab to cycle further; Ctrl+Shift+Tab goes the other way.
 
 **中文 · 新增**
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
+- 壁纸 X 可用 Responses 搜索，失败时清楚回退到 CLI（#1088）。
+- 壁纸 X 的 Responses 搜索会按完成批次逐步显示已校验图片（#1089）。
+- 壁纸 X 的 Responses 搜索会复用同一查询的近期已验证结果（#1090）。
+- 壁纸 X 的 Responses 搜索可加载更多，且不清空已有图库（#1091）。
+- 壁纸来源新增 Openverse / Pexels 搜索、分页与 Pexels Key 设置（#1096）。
+- Openverse / Pexels 在成功搜索后会预取下一页（#1097）。
+- 壁纸来源新增独立的 Web 图片搜索，并安全下载预览（#1099）。
+- 壁纸来源可在安全登录校验后浏览 Grok Saved 相册（#1103）。
 - Ctrl+Tab 切回上一个用过的对话。按住 Ctrl 再点 Tab 继续循环；Ctrl+Shift+Tab 反向。
 
 ### Changed
+- Sent quotes show the excerpt and comment in the bubble, not a notes chip.
+- Streaming chat, heatmap hover, and SSH sidebar refresh do less re-rendering (#1073).
+- Default workspace uses a house icon in the sidebar and composer (#1069).
+- Sidebar Other now uses the same name as the composer chip: Default workspace (#1067).
+- Startup skips TipTap and markdown preloads; Office and Settings load on demand (#1055, #1063).
 - Expanded sidebar pins remaining SuperGrok quota without opening the account menu (#1048). Settings is a footer gear; the account menu keeps theme and sign-in.
 
 **中文 · 变更**
+- 发送后的引用在气泡里直接显示摘录和评论，不再收成「N 条注释」。
+- 流式对话、热力图像悬停与 SSH 侧栏刷新减少无效重渲染（#1073）。
+- 默认工作区在侧栏和输入框改用小房子图标（#1069）。
+- 侧栏「其他会话」与输入框统一为「默认工作区」（#1067）。
+- 启动不再预载 TipTap / markdown；Office 与设置页按需加载（#1055、#1063）。
 - 展开左边栏即可看到 SuperGrok 剩余额度，不必再点开账户菜单（#1048）。设置改为脚注齿轮；账户菜单只留主题和登录。
 
 ### Fixed

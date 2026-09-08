@@ -18,9 +18,23 @@ export type WallpaperGalleryItem = {
   likes?: number | null;
   localPath?: string | null;
   prompt?: string | null;
+  sourceUrl?: string | null;
+  sourceName?: string | null;
+  authorName?: string | null;
+  authorUrl?: string | null;
+  license?: string | null;
+  licenseUrl?: string | null;
 };
 
 export type WallpaperSearchResult = {
+  meta?: {
+    requestId?: string | null;
+    routeUsed: "cli" | "responses";
+    fallbackReason?: string | null;
+    durationMs: number;
+    cacheHit?: boolean;
+    continuationId?: string | null;
+  } | null;
   items: WallpaperGalleryItem[];
   errorCode?: string | null;
   message?: string | null;
@@ -43,6 +57,10 @@ export type WallpaperLibraryEntry = {
 };
 
 export type WallpaperSourceErrorCode =
+  | "pexels_key_required"
+  | "pexels_key_invalid"
+  | "service_unavailable"
+  | "rate_limited"
   | "auth_required"
   | "cli_missing"
   | "search_failed"
@@ -64,6 +82,7 @@ export function parseWallpaperSourceError(err: unknown): WallpaperSourceErrorCod
           ? String((err as { message: unknown }).message)
           : "";
   const s = raw.toLowerCase();
+  if (s.includes("rate_limited")) return "rate_limited";
   if (s.includes("auth_required")) return "auth_required";
   if (s.includes("cli_missing")) return "cli_missing";
   if (
@@ -109,6 +128,7 @@ export function errorCodeFromSearchResult(
   if (code === "imagine_failed") return "imagine_failed";
   if (code === "empty") return "empty";
   if (code === "timeout") return "timeout";
+  if (code.includes("rate_limited")) return "rate_limited";
   return "generic";
 }
 
@@ -125,6 +145,23 @@ export function dedupeGalleryItems(
     out.push(it);
   }
   return out;
+}
+
+/** Append remote results without duplicating an already-materialized card. */
+export function appendWallpaperGalleryItems(
+  existing: WallpaperGalleryItem[],
+  incoming: WallpaperGalleryItem[],
+): WallpaperGalleryItem[] {
+  const ids = new Set(existing.map((item) => `${item.source}:${item.id}`));
+  const urls = new Set(existing.map((item) => item.fullUrl));
+  const fresh = incoming.filter((item) => {
+    const id = `${item.source}:${item.id}`;
+    if (ids.has(id) || urls.has(item.fullUrl)) return false;
+    ids.add(id);
+    urls.add(item.fullUrl);
+    return true;
+  });
+  return dedupeGalleryItems([...existing, ...fresh]);
 }
 
 function mimeFromName(name: string): string {
@@ -499,4 +536,3 @@ export function libraryEntriesToGalleryItems(
       : [...entries];
   return dedupeGalleryItems(ordered.map(libraryEntryToGalleryItem));
 }
-

@@ -79,6 +79,7 @@ mod error;
 
 mod extensions;
 mod mcp_oauth;
+mod plugin_auth_transport;
 mod plugin_mcp;
 
 mod fs_browser;
@@ -223,10 +224,21 @@ mod voice_stt;
 
 mod voice_tools;
 
+mod wallpaper_grok_album;
+mod wallpaper_provider_search;
+mod wallpaper_remote_commands;
+mod wallpaper_remote_media;
+mod wallpaper_remote_search;
+mod wallpaper_responses_client;
 mod wallpaper_source;
+mod wallpaper_web_page;
+mod wallpaper_web_search;
+mod wallpaper_x_responses;
+mod wallpaper_x_search;
 
 mod window_min;
 
+mod safe_https_client;
 mod skin_catalog;
 mod skin_deeplink;
 mod skin_disk;
@@ -239,8 +251,6 @@ mod skin_video_bake;
 
 #[cfg(target_os = "macos")]
 mod mac_ime_fn_bridge;
-#[cfg(windows)]
-mod win_ctrl_tab;
 #[cfg(windows)]
 mod win_file_drop;
 #[cfg(windows)]
@@ -749,8 +759,6 @@ pub fn run() {
                     // Late OLE drop targets — must run after show (#1017).
                     #[cfg(windows)]
                     win_file_drop::install_after_show(&w);
-                    #[cfg(windows)]
-                    win_ctrl_tab::install(&w);
                     // Doubao Fn voice needs IME to see flagsChanged (#1030).
                     #[cfg(target_os = "macos")]
                     mac_ime_fn_bridge::install();
@@ -764,8 +772,6 @@ pub fn run() {
                 // WebView2 child HWNDs → forbidden cursor (#1017 / tauri#14643).
                 #[cfg(windows)]
                 win_file_drop::install_after_show(&window);
-                #[cfg(windows)]
-                win_ctrl_tab::install(&window);
                 // Doubao Fn voice needs IME to see flagsChanged (#1030).
                 #[cfg(target_os = "macos")]
                 mac_ime_fn_bridge::install();
@@ -1701,7 +1707,16 @@ pub fn run() {
 
             remote_im::remote_im_doctor,
 
+            wallpaper_remote_commands::wallpaper_remote_search,
+            wallpaper_remote_commands::wallpaper_remote_search_more,
+            wallpaper_remote_commands::wallpaper_remote_search_cancel,
+            wallpaper_remote_commands::wallpaper_remote_fetch_media,
+            wallpaper_remote_commands::wallpaper_remote_thumbnail,
+            wallpaper_remote_commands::wallpaper_remote_cancel_media_requests,
+            wallpaper_remote_commands::wallpaper_remote_cancel_all_media_requests,
             commands::wallpaper_x_search,
+            commands::wallpaper_x_search_cancel,
+            commands::wallpaper_x_search_more,
 
             commands::wallpaper_fetch_media,
 
@@ -1710,6 +1725,22 @@ pub fn run() {
             commands::wallpaper_library_list,
 
             commands::wallpaper_library_delete,
+
+            wallpaper_grok_album::wallpaper_grok_album_open,
+
+            wallpaper_grok_album::wallpaper_grok_album_snapshot,
+
+            wallpaper_grok_album::wallpaper_grok_album_refresh,
+
+            wallpaper_grok_album::wallpaper_grok_album_load_more,
+
+            wallpaper_grok_album::wallpaper_grok_album_thumbnail,
+
+            wallpaper_grok_album::wallpaper_grok_album_cancel_requests,
+
+            wallpaper_grok_album::wallpaper_grok_album_cancel_all_requests,
+
+            wallpaper_grok_album::wallpaper_grok_album_fetch_media,
 
             commands::skin_pick_open,
             commands::skin_pick_save,

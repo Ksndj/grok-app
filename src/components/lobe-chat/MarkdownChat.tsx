@@ -20,7 +20,7 @@ import { createT } from "@/i18n";
 import { ImageUi, imageUiLabels } from "@/components/ImageUi";
 import { VideoUi, videoUiLabels } from "@/components/VideoUi";
 import { FilePathCard, type FilePathCardLabels } from "@/components/FilePathCard";
-import type { ResourceOpenTarget } from "@/components/ResourceViewer";
+import type { ResourceOpenTarget } from "@/components/resource-viewer/types";
 import { HighlightedText } from "@/components/HighlightedText";
 import {
   isImagePath,
@@ -120,6 +120,30 @@ function textFromChildren(children: ReactNode): string {
 /** Stable identity so ReactMarkdown does not remount the tree every stream tick. */
 export const MARKDOWN_CHAT_REMARK_PLUGINS = MARKDOWN_REMARK_PLUGINS;
 export const MARKDOWN_CHAT_REHYPE_PLUGINS = MARKDOWN_REHYPE_PLUGINS;
+
+/**
+ * Streaming prefix view — memoized on the source string so the already-
+ * painted markdown prefix is not re-parsed (and rehype-katex not re-run) on
+ * every ~110ms tail flush. ReactMarkdown itself is synchronous and unmemoized,
+ * so the memo boundary must live one level up.
+ */
+const MarkdownStablePrefix = memo(function MarkdownStablePrefix({
+  source,
+  components,
+}: {
+  source: string;
+  components: Components;
+}) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={MARKDOWN_CHAT_REMARK_PLUGINS}
+      rehypePlugins={MARKDOWN_CHAT_REHYPE_PLUGINS}
+      components={components}
+    >
+      {source}
+    </ReactMarkdown>
+  );
+});
 
 type MdKids = { children?: ReactNode };
 
@@ -743,13 +767,10 @@ export const MarkdownChat = memo(function MarkdownChat({
         <p>{painted}</p>
       ) : tailSplit.prefix ? (
         <>
-          <ReactMarkdown
-            remarkPlugins={MARKDOWN_CHAT_REMARK_PLUGINS}
-            rehypePlugins={MARKDOWN_CHAT_REHYPE_PLUGINS}
+          <MarkdownStablePrefix
+            source={tailSplit.prefix}
             components={components}
-          >
-            {tailSplit.prefix}
-          </ReactMarkdown>
+          />
           <ReactMarkdown
             remarkPlugins={MARKDOWN_CHAT_REMARK_PLUGINS}
             rehypePlugins={MARKDOWN_CHAT_REHYPE_PLUGINS}

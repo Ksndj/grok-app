@@ -1,7 +1,15 @@
+import type {
+  WallpaperRemoteSearchBatch,
+  WallpaperRemoteSearchProgress,
+  WallpaperRemoteSearchResult,
+  WallpaperRemoteSource,
+  WallpaperRemoteThumbnail,
+} from "../wallpaperRemoteSearch";
 /** API domain: wallpaper */
 
 import {
   invoke,
+  listen,
 } from "./host";
 
 import type {
@@ -9,6 +17,10 @@ import type {
   WallpaperLibraryEntry,
   WallpaperSearchResult,
 } from "../wallpaperSource";
+import type {
+  GrokAlbumSnapshot,
+  GrokAlbumThumbnail,
+} from "../grokAlbum";
 export type {
   WallpaperFetchResult,
   WallpaperGalleryItem,
@@ -21,11 +33,25 @@ export type {
 export async function wallpaperXSearch(
   query: string,
   sort?: "top" | "latest",
+  requestId?: string,
 ): Promise<WallpaperSearchResult> {
   return invoke<WallpaperSearchResult>("wallpaper_x_search", {
     query,
     sort: sort ?? null,
+    requestId: requestId ?? null,
   });
+}
+
+export async function wallpaperXSearchCancel(requestId: string): Promise<boolean> {
+  return invoke<boolean>("wallpaper_x_search_cancel", { requestId });
+}
+
+export async function listenWallpaperXSearchProgress(
+  handler: (progress: import("../wallpaperXSearch").WallpaperXSearchProgress) => void,
+): Promise<() => void> {
+  return listen<import("../wallpaperXSearch").WallpaperXSearchProgress>(
+    "wallpaper://x-search-progress", handler,
+  );
 }
 
 export async function wallpaperFetchMedia(
@@ -53,6 +79,58 @@ export async function wallpaperLibraryList(
 ): Promise<WallpaperLibraryEntry[]> {
   return invoke<WallpaperLibraryEntry[]>("wallpaper_library_list", {
     limit: limit ?? null,
+  });
+}
+
+// ── Grok Imagine saved album (isolated consumer WebView) ───────────────────
+
+export async function wallpaperGrokAlbumOpen(title: string): Promise<void> {
+  await invoke<void>("wallpaper_grok_album_open", { title });
+}
+
+export async function wallpaperGrokAlbumSnapshot(): Promise<GrokAlbumSnapshot> {
+  return invoke<GrokAlbumSnapshot>("wallpaper_grok_album_snapshot");
+}
+
+export async function wallpaperGrokAlbumRefresh(): Promise<void> {
+  await invoke<void>("wallpaper_grok_album_refresh");
+}
+
+export async function wallpaperGrokAlbumLoadMore(
+  backgroundOnly = false,
+): Promise<GrokAlbumSnapshot> {
+  return invoke<GrokAlbumSnapshot>("wallpaper_grok_album_load_more", {
+    backgroundOnly,
+  });
+}
+
+export async function wallpaperGrokAlbumThumbnail(
+  url: string,
+  requestId: string,
+): Promise<GrokAlbumThumbnail> {
+  return invoke<GrokAlbumThumbnail>("wallpaper_grok_album_thumbnail", {
+    url,
+    requestId,
+  });
+}
+
+export async function wallpaperGrokAlbumCancelRequests(
+  requestIds: string[],
+): Promise<number> {
+  return invoke<number>("wallpaper_grok_album_cancel_requests", { requestIds });
+}
+
+export async function wallpaperGrokAlbumCancelAllRequests(): Promise<number> {
+  return invoke<number>("wallpaper_grok_album_cancel_all_requests");
+}
+
+export async function wallpaperGrokAlbumFetchMedia(
+  url: string,
+  requestId: string,
+): Promise<WallpaperFetchResult> {
+  return invoke<WallpaperFetchResult>("wallpaper_grok_album_fetch_media", {
+    url,
+    requestId,
   });
 }
 
@@ -143,3 +221,101 @@ export async function wallpaperLibraryDelete(path: string): Promise<void> {
   await invoke<void>("wallpaper_library_delete", { path });
 }
 
+
+export async function listenWallpaperXSearchBatch(
+  handler: (batch: import("../wallpaperXSearch").WallpaperXSearchBatch) => void,
+): Promise<() => void> {
+  return listen<import("../wallpaperXSearch").WallpaperXSearchBatch>("wallpaper://x-search-batch", handler);
+}
+
+export async function wallpaperXSearchMore(continuationId: string, requestId: string): Promise<WallpaperSearchResult> {
+  return invoke<WallpaperSearchResult>("wallpaper_x_search_more", { continuationId, requestId });
+}
+
+export async function wallpaperRemoteSearch(
+  source: WallpaperRemoteSource,
+  query: string,
+  requestId?: string,
+): Promise<WallpaperRemoteSearchResult> {
+  return invoke<WallpaperRemoteSearchResult>("wallpaper_remote_search", {
+    source,
+    query,
+    requestId: requestId ?? null,
+  });
+}
+
+export async function wallpaperRemoteSearchMore(
+  source: WallpaperRemoteSource,
+  query: string,
+  requestId?: string,
+): Promise<WallpaperRemoteSearchResult> {
+  return invoke<WallpaperRemoteSearchResult>("wallpaper_remote_search_more", {
+    source,
+    query,
+    requestId: requestId ?? null,
+  });
+}
+
+export async function wallpaperRemoteSearchCancel(
+  source: WallpaperRemoteSource,
+  requestId: string,
+): Promise<boolean> {
+  return invoke<boolean>("wallpaper_remote_search_cancel", {
+    source,
+    requestId,
+  });
+}
+
+export function listenWallpaperRemoteSearchProgress(
+  handler: (progress: WallpaperRemoteSearchProgress) => void,
+): Promise<() => void> {
+  return listen<WallpaperRemoteSearchProgress>(
+    "wallpaper://remote-search-progress",
+    handler,
+  );
+}
+
+export function listenWallpaperRemoteSearchBatch(
+  handler: (batch: WallpaperRemoteSearchBatch) => void,
+): Promise<() => void> {
+  return listen<WallpaperRemoteSearchBatch>(
+    "wallpaper://remote-search-batch",
+    handler,
+  );
+}
+
+export async function wallpaperRemoteFetchMedia(
+  source: WallpaperRemoteSource,
+  url: string,
+  requestId: string,
+): Promise<WallpaperFetchResult> {
+  return invoke<WallpaperFetchResult>("wallpaper_remote_fetch_media", {
+    source,
+    url,
+    requestId,
+  });
+}
+
+export async function wallpaperRemoteThumbnail(
+  source: WallpaperRemoteSource,
+  url: string,
+  requestId: string,
+): Promise<WallpaperRemoteThumbnail> {
+  return invoke<WallpaperRemoteThumbnail>("wallpaper_remote_thumbnail", {
+    source,
+    url,
+    requestId,
+  });
+}
+
+export async function wallpaperRemoteCancelMediaRequests(
+  requestIds: string[],
+): Promise<number> {
+  return invoke<number>("wallpaper_remote_cancel_media_requests", {
+    requestIds,
+  });
+}
+
+export async function wallpaperRemoteCancelAllMediaRequests(): Promise<number> {
+  return invoke<number>("wallpaper_remote_cancel_all_media_requests");
+}

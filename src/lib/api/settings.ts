@@ -8,6 +8,7 @@ import {
 export type ComposerPrefsScope = "global" | "project" | "session";
 
 export interface AppSettings {
+  wallpaperXSearchMode?: string;
   theme: string;
   locale: string;
   sessionDataMode: string;
@@ -177,7 +178,7 @@ export interface AppSettings {
   /** Sidebar project folder ids the user collapsed (missing ⇒ expanded). */
   sidebarCollapsedProjectIds?: string[];
   /**
-   * Sidebar “Other sessions” section expanded. Default true (open).
+   * Sidebar Default workspace section expanded. Default true (open).
    * Missing / undefined ⇒ open (legacy installs before this pref).
    */
   sidebarOtherSessionsOpen?: boolean;
@@ -226,6 +227,12 @@ export interface AppSettings {
   notifyOnTurnDone?: boolean;
   /** Desktop notification when the agent requests permission (default true). */
   notifyOnPermission?: boolean;
+  /** Outbound route: system | manual | none. */
+  proxyMode?: string;
+  /** Proxy URL used by Manual mode. */
+  proxyUrl?: string | null;
+  /** Comma-separated hosts bypassing the proxy. */
+  proxyNoProxy?: string | null;
   /**
    * Allow CLI install when the mirror has no published SHA-256 (default false).
    * Mismatch always fails. Prefer fixing the mirror over enabling this.
@@ -350,6 +357,7 @@ export async function secretsGetMasked() {
   return invoke<{
     hasOfficialKey: boolean;
     hasRelayKey: boolean;
+    hasPexelsKey: boolean;
     hasSttCustomKey: boolean;
     /** Per-provider-preset custom STT key presence (ADR-0001). */
     sttCustomKeys?: Record<string, boolean>;
@@ -362,6 +370,7 @@ export async function secretsSet(body: {
   officialApiKey?: string;
   relayBaseUrl?: string;
   relayApiKey?: string;
+  pexelsApiKey?: string;
   defaultModel?: string;
   sttCustomApiKey?: string;
   /** Provider preset id the custom STT key belongs to (ADR-0001). */
@@ -371,6 +380,7 @@ export async function secretsSet(body: {
     officialApiKey: body.officialApiKey ?? null,
     relayBaseUrl: body.relayBaseUrl ?? null,
     relayApiKey: body.relayApiKey ?? null,
+    pexelsApiKey: body.pexelsApiKey ?? null,
     defaultModel: body.defaultModel ?? null,
     sttCustomApiKey: body.sttCustomApiKey ?? null,
     sttCustomApiKeyProvider: body.sttCustomApiKeyProvider ?? null,

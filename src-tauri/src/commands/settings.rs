@@ -17,6 +17,8 @@ pub async fn settings_set(
 ) -> Result<AppSettings, String> {
     let prev = store::load_settings();
     let mut settings = settings;
+    settings.wallpaper_x_search_mode =
+        store::normalize_wallpaper_x_search_mode(&settings.wallpaper_x_search_mode).into();
     // Normalize denylist / allowlist so spawn / equality see stable lists.
     settings.disallowed_tools =
         crate::acp_client::normalize_disallowed_tools(&settings.disallowed_tools);
@@ -43,6 +45,9 @@ pub async fn settings_set(
         crate::acp_client::normalize_compaction_mode(&settings.compaction_mode).to_string();
     settings.compaction_detail =
         crate::acp_client::normalize_compaction_detail(&settings.compaction_detail).to_string();
+    // Keep Host routing, returned IPC settings, and persisted JSON on the same
+    // canonical proxy mode. Legacy `use` needs proxyUrl context to migrate.
+    store::normalize_proxy_settings(&mut settings);
     // Audit ledger retention presets: 7 / 30 / 90 / 0 (unlimited).
     settings.audit_ledger_retention_days =
         crate::audit_ledger::normalize_retention_days(settings.audit_ledger_retention_days);
@@ -134,6 +139,10 @@ pub async fn settings_set(
         prev.schedules_launch_agent != settings.schedules_launch_agent;
 
     store::save_settings(&settings)?;
+
+    if proxy_flip {
+        crate::wallpaper_grok_album::close_for_proxy_change(&app);
+    }
 
     if schedules_launch_agent_flip {
         let res = if settings.schedules_launch_agent {
@@ -583,6 +592,7 @@ pub async fn secrets_get_masked() -> Result<serde_json::Value, String> {
         "hasOfficialKey": crate::secrets::has_official_key_configured(&s),
         "hasRelayKey": has_provider_key
             || crate::secrets::has_relay_key_configured(&s),
+        "hasPexelsKey": crate::secrets::has_pexels_key_configured(&s),
         "hasSttCustomKey": crate::secrets::has_stt_custom_key_configured(&s),
         "sttCustomKeys": crate::secrets::stt_custom_key_presence(&s),
         "relayBaseUrl": relay_base,
@@ -606,6 +616,7 @@ pub async fn secrets_set(
     official_api_key: Option<String>,
     relay_base_url: Option<String>,
     relay_api_key: Option<String>,
+    pexels_api_key: Option<String>,
     default_model: Option<String>,
     stt_custom_api_key: Option<String>,
     stt_custom_api_key_provider: Option<String>,
@@ -628,6 +639,9 @@ pub async fn secrets_set(
         } else {
             Some(k)
         };
+    }
+    if let Some(k) = pexels_api_key {
+        s.pexels_api_key = if k.trim().is_empty() { None } else { Some(k.trim().to_string()) };
     }
     if let Some(m) = default_model {
         s.default_model = if m.is_empty() { None } else { Some(m) };

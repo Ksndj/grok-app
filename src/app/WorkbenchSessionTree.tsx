@@ -3,6 +3,7 @@
  * Catalog paint lives here. Open/new-chat and UserMenu stay with the host.
  */
 import type { CSSProperties, Dispatch, MouseEvent, ReactNode, SetStateAction } from "react";
+import { useMemo } from "react";
 import { SidebarProjectsMoreMenu } from "@/components/SidebarProjectsMoreMenu";
 import { activeSpaceLabel } from "@/lib/projectSpaces";
 import { OverlayScroll } from "@/components/OverlayScroll";
@@ -22,6 +23,7 @@ import {
   IconChevronRight,
   IconClose,
   IconFolder,
+  IconHome,
   IconListCheck,
   IconMore,
   IconPin,
@@ -48,6 +50,9 @@ import type { ProjectSpacesState } from "@/lib/projectSpaces";
 import { SshRemoteSessionRail } from "@/components/SshRemoteSessionRail";
 
 type TFn = ReturnType<typeof createT>;
+
+/** Stable empty list for projects with no sessions (keeps VirtualList props referentially stable). */
+const NO_SESSIONS: SessionRow[] = [];
 
 export type WorkbenchSessionTreeProps = {
   tr: TFn;
@@ -167,13 +172,29 @@ export function WorkbenchSessionTree(props: WorkbenchSessionTreeProps) {
   const treeProjects = visibleProjects.filter(
     (p) => !hideSshProjectInLocalTree(p, watchAliases),
   );
+  // Group + sort once per sessions/projects change — previously the full list
+  // was filtered per project and re-sorted on every render (O(P×S) churn).
+  const [sortedByProject, orphanSessions] = useMemo(() => {
+    const byProject = new Map<string, SessionRow[]>();
+    const orphans: SessionRow[] = [];
+    const projectIds = new Set(projects.map((p) => p.id));
+    for (const s of sessions) {
+      if (s.archived) continue;
+      if (s.projectId && projectIds.has(s.projectId)) {
+        const list = byProject.get(s.projectId);
+        if (list) list.push(s);
+        else byProject.set(s.projectId, [s]);
+      } else {
+        orphans.push(s);
+      }
+    }
+    for (const [id, list] of byProject) {
+      byProject.set(id, sortSessionsForSidebar(list));
+    }
+    return [byProject, sortSessionsForSidebar(orphans)] as const;
+  }, [sessions, projects]);
   const sessionsForProject = (projectId: string) =>
-    sessions.filter((s) => s.projectId === projectId && !s.archived);
-  const orphanSessions = sessions.filter(
-    (s) =>
-      (!s.projectId || !projects.some((p) => p.id === s.projectId)) &&
-      !s.archived,
-  );
+    sortedByProject.get(projectId) ?? NO_SESSIONS;
   const orphanSessionIds = orphanSessions.map((s) => s.id);
   const orphanAllSelected = areAllIdsSelected(
     selectedSessionIds,
@@ -537,8 +558,7 @@ export function WorkbenchSessionTree(props: WorkbenchSessionTreeProps) {
                         )}
                         {projSessions.length > 0
                           ? (() => {
-                              const sortedSessions =
-                                sortSessionsForSidebar(projSessions);
+                              const sortedSessions = projSessions;
                               return (
                                 <VirtualList
                                   className="tree-l3-list"
@@ -633,6 +653,9 @@ export function WorkbenchSessionTree(props: WorkbenchSessionTreeProps) {
                     <IconChevronRight size={14} />
                   )}
                 </span>
+                <span className="tree-l1__icon" aria-hidden>
+                  <IconHome size={14} />
+                </span>
                 <span className="tree-l1__label">
                   {tr("sidebar.otherSessions")}
                 </span>
@@ -695,7 +718,7 @@ export function WorkbenchSessionTree(props: WorkbenchSessionTreeProps) {
             </div>
             {orphanSessions.length > 0
               ? (() => {
-                  const sortedOrphans = sortSessionsForSidebar(orphanSessions);
+                  const sortedOrphans = orphanSessions;
                   return (
                     <SidebarTreeReveal open={historyOpen}>
                       <div className="tree-l3-list-wrap">

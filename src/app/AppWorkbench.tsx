@@ -530,7 +530,7 @@ import {
   isProviderBalanceCacheFresh,
   type ProviderBalanceCache,
 } from "@/lib/providerBalanceFormat";
-import type { ResourceOpenTarget } from "@/components/ResourceViewer";
+import type { ResourceOpenTarget } from "@/components/resource-viewer/types";
 import {
   type SidePickerKind,
 } from "@/lib/sideWorkbench";
@@ -571,6 +571,11 @@ const SetupWizard = lazy(async () => {
 const BottomTerminal = lazy(async () => {
   const m = await import("@/components/bottom-terminal/BottomTerminal");
   return { default: m.BottomTerminal };
+});
+// Settings tree (~12k lines) only loads when the settings overlay opens.
+const WorkbenchSettingsStage = lazy(async () => {
+  const m = await import("@/app/WorkbenchSettingsStage");
+  return { default: m.WorkbenchSettingsStage };
 });
 
 import {
@@ -686,7 +691,6 @@ import { WorkbenchSessionModals } from "@/app/WorkbenchSessionModals";
 import { WorkbenchChromeOverlays } from "@/app/WorkbenchChromeOverlays";
 import { WorkbenchComposerColumn } from "@/app/WorkbenchComposerColumn";
 import { WorkbenchFloatingMenus } from "@/app/WorkbenchFloatingMenus";
-import { WorkbenchSettingsStage } from "@/app/WorkbenchSettingsStage";
 import { WorkbenchChatStage } from "@/app/WorkbenchChatStage";
 import { useSessionExportText } from "@/hooks/useSessionExportText";
 import { useSessionExportImage } from "@/hooks/useSessionExportImage";
@@ -1200,7 +1204,7 @@ export function AppWorkbench() {
   /** Avoid writing collapse prefs before settings hydrate on launch. */
   const expandedProjectsHydratedRef = useRef(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
-  /** Orphan / “Other sessions” tree section. Hydrated from AppSettings. */
+  /** Orphan / Default workspace tree section. Hydrated from AppSettings. */
   const [historyOpen, setHistoryOpen] = useState(true);
   /** Avoid writing other-sessions collapse before settings hydrate on launch. */
   const historyOpenHydratedRef = useRef(false);
@@ -2678,7 +2682,7 @@ export function AppWorkbench() {
         ),
       );
       expandedProjectsHydratedRef.current = true;
-      // Restore “Other sessions” section (missing / undefined ⇒ open).
+      // Restore Default workspace section (missing / undefined ⇒ open).
       // Only hydrate once so later refreshLists does not clobber in-session toggles.
       if (!historyOpenHydratedRef.current) {
         setHistoryOpen(settings.sidebarOtherSessionsOpen !== false);
@@ -3411,7 +3415,7 @@ export function AppWorkbench() {
       .catch(() => {});
   }, [expandedProjects]);
 
-  // Persist sidebar “Other sessions” expand/collapse after hydrate.
+  // Persist sidebar Default workspace expand/collapse after hydrate.
   useEffect(() => {
     if (!historyOpenHydratedRef.current) return;
     if (!api.isTauri()) return;
@@ -4559,7 +4563,7 @@ export function AppWorkbench() {
           await api.projectRemove(proj.id);
           projectSpaces.forgetProject(proj.id);
           if (activeProject?.id === proj.id) {
-            // Unbound — sessions for this folder show under "其他会话".
+            // Unbound — sessions for this folder show under Default workspace.
             setActiveProject(null);
             setHistoryOpen(true);
             setSession(IDLE_SNAPSHOT);
@@ -4618,7 +4622,7 @@ export function AppWorkbench() {
         const proj = s.projectId
           ? projects.find((p) => p.id === s.projectId) ?? null
           : null;
-        // Same project context when possible; orphan → “其他会话” draft.
+        // Same project context when possible; orphan → Default workspace draft.
         if (proj) await newChat(proj, { switchToChat: true });
         else await newChat(null, { switchToChat: true });
       } else if (!archived && s.projectId) {
@@ -12184,6 +12188,7 @@ export function AppWorkbench() {
       {appGate === "ready" && (
       <>
       {settingsOpen ? (
+      <Suspense fallback={null}>
       <WorkbenchSettingsStage
         account={account}
         accountBusy={accountBusy}
@@ -12409,6 +12414,7 @@ export function AppWorkbench() {
         workflowsEnabled={workflowsEnabled}
         zenMode={zenMode}
       />
+      </Suspense>
       ) : null}
       <div
         className={
