@@ -261,6 +261,7 @@ export function useSideWorkbenchChrome(opts: {
     sideDockComposerH,
     setSideDockComposerH,
     sideIsGitProject,
+    setSideIsGitProject,
     reviewFocus,
     setReviewFocus,
     planOpenedAsideRef,

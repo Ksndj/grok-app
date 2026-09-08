@@ -1734,6 +1734,7 @@ export function AppWorkbench() {
     sideDockComposerH,
     setSideDockComposerH,
     sideIsGitProject,
+    setSideIsGitProject,
     reviewFocus,
     planOpenedAsideRef,
     sideDockActive,
@@ -9747,12 +9748,14 @@ export function AppWorkbench() {
     if (!path || !api.isTauri()) {
       gitDirtyReqRef.current += 1;
       setGitDirtySummary((prev) => (prev == null ? prev : null));
+      setSideIsGitProject(false);
       return;
     }
     const reqId = ++gitDirtyReqRef.current;
     try {
       const status = await api.gitStatus(path);
       if (reqId !== gitDirtyReqRef.current) return;
+      setSideIsGitProject(!!status?.available);
       const next = summarizeGitDirty(status);
       setGitDirtySummary((prev) =>
         gitDirtySummariesEqual(prev, next) ? prev : next,
@@ -9764,7 +9767,7 @@ export function AppWorkbench() {
       if (reqId !== gitDirtyReqRef.current) return;
       setGitDirtySummary((prev) => (prev == null ? prev : null));
     }
-  }, [effectiveProjectPath, applyStatusBranch]);
+  }, [effectiveProjectPath, applyStatusBranch, setSideIsGitProject]);
 
   useEffect(() => {
     void refreshGitDirtyStatus();
