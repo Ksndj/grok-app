@@ -14,11 +14,11 @@ See `docs/llm-wiki/release.md`.
 ## [Unreleased]
 
 ### Fixed
-- Sending with images or attachments no longer shows two identical user bubbles while the reply streams (#1119, #1124).
-- After an idle reconnect, the same user turn is not painted twice when Host and optimistic rows race (#1124).
-- Custom relays show retry progress and a waiting hint under Thinking instead of a blank “working” state (#1126).
-- Wallpaper search keeps media favorites and local paths across pages, and restores the multi-source gallery layout (#1120).
-- Switching wallpaper sources no longer cancels in-flight search; ZDR privacy blocks show a clear image-to-video hint (#1121).
+- Sending with images or attachments no longer shows duplicate user bubbles. The same turn is not painted twice while the reply streams (#1119, #1124).
+- After idle reconnect, the same user turn is not painted twice (#1124). Host and optimistic rows no longer race into a duplicate.
+- Custom relays show retry progress under Thinking (#1126). A waiting hint replaces the blank “working” state.
+- Wallpaper search keeps favorites and local paths across pages (#1120). The multi-source gallery layout is restored.
+- Switching wallpaper sources no longer cancels in-flight search (#1121). ZDR privacy blocks show a clear image-to-video hint.
 - Long chats stay smoother on a Windows touchscreen. Slow pans no longer hitch while the finger is down (#1122).
 - Windows no longer freezes when stream IPC or tool journals ran under session locks.
 - Opening a chat times out stuck history loads and keeps the cached transcript.
