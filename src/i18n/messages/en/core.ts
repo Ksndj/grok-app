@@ -1,6 +1,8 @@
 /** English messages — domain: core */
 export const enCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Loading original...",
+  "image.originalFailed": "Could not load the original. The preview is still available.",
   "app.tagline": "MIT · Unofficial · Sister project grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · Unofficial · Sister project grok-go",
   "window.minimize": "Minimize",
@@ -123,6 +125,8 @@ export const enCore = {
   "shortcuts.closeSideTab": "Close side tab (window when none open)",
   "shortcuts.sidebarSessionNav": "Next / previous chat in sidebar (focus in list)",
   "shortcuts.recentSessionMru": "Next / previous recently used chat",
+  "shortcuts.recentSessionMruPanel": "Recently used chats",
+  "shortcuts.recentSessionMruPanelHint": "Release Ctrl to open",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Start Live Voice",
   "shortcuts.off": "Off",

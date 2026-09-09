@@ -1,6 +1,8 @@
 /** ru messages — domain: core */
 export const ruCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Загрузка оригинала…",
+  "image.originalFailed": "Не удалось загрузить оригинал. Предпросмотр по-прежнему доступен.",
   "app.tagline": "MIT · Неофициально · Сестринский проект grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · Неофициально · Сестринский проект grok-go",
   "window.minimize": "Свернуть",
@@ -122,6 +124,8 @@ export const ruCore = {
   "shortcuts.closeSideTab": "Закрыть боковую вкладку (окно, если вкладок нет)",
   "shortcuts.sidebarSessionNav": "Следующий / предыдущий чат на боковой панели (фокус в списке)",
   "shortcuts.recentSessionMru": "Следующий / предыдущий недавно использованный чат",
+  "shortcuts.recentSessionMruPanel": "Недавние чаты",
+  "shortcuts.recentSessionMruPanelHint": "Отпустите Ctrl, чтобы открыть",
   "shortcuts.doctor": "Диагностика",
   "shortcuts.liveVoice": "Начать Live Voice",
   "shortcuts.off": "Выкл.",

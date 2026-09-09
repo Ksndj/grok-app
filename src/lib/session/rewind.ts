@@ -284,6 +284,8 @@ export function forkSessionTitle(sourceTitle: string | undefined | null): string
 export function isClientOptimisticId(id: string): boolean {
   return (
     /^u-\d+$/.test(id) ||
+    id.startsWith("u-auto-") ||
+    id.startsWith("u-batch-") ||
     id.startsWith("a-pending-") ||
     /^a-\d+$/.test(id) ||
     /^t-\d+$/.test(id)
@@ -323,9 +325,10 @@ export function stripUserAttachmentRefs(message: ChatMessage): ChatMessage {
  * Match optimistic `u-${ts}` rows to the host UUID even when journal
  * dual-wrote `@/path` lines the composer never showed.
  */
-function userBubbleDedupeKey(message: ChatMessage): string {
+export function userBubbleDedupeKey(message: ChatMessage): string {
   const parsed = parseAttachmentsFromContent(message.content ?? "");
-  const text = parsed.text.trim();
+  // Windows composers may keep CRLF; Host journal normalizes to LF.
+  const text = parsed.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   const paths = new Set<string>();
   for (const a of message.attachments ?? []) {
     if (a.path) paths.add(a.path);
@@ -336,7 +339,7 @@ function userBubbleDedupeKey(message: ChatMessage): string {
   return `${text}\n---\n${[...paths].sort().join("\n")}`;
 }
 
-const EMPTY_USER_KEY = "\n---\n";
+export const EMPTY_USER_KEY = "\n---\n";
 
 /**
  * Remove optimistic user/pending-assistant rows that host journal already

@@ -14,6 +14,18 @@ See `docs/llm-wiki/release.md`.
 ## [Unreleased]
 
 ### Fixed
+- Sending with images or attachments no longer shows two identical user bubbles while the reply streams (#1119, #1124).
+- After an idle reconnect, the same user turn is not painted twice when Host and optimistic rows race (#1124).
+- Custom relays show retry progress and a waiting hint under Thinking instead of a blank “working” state (#1126).
+- Wallpaper search keeps media favorites and local paths across pages, and restores the multi-source gallery layout (#1120).
+- Switching wallpaper sources no longer cancels in-flight search; ZDR privacy blocks show a clear image-to-video hint (#1121).
+- Long chats stay smoother on a Windows touchscreen. Slow pans no longer hitch while the finger is down (#1122).
+- Windows no longer freezes when stream IPC or tool journals ran under session locks.
+- Opening a chat times out stuck history loads and keeps the cached transcript.
+- Connect retry no longer waits unbounded on a stuck claim or stop.
+- Windows agent kill reaps the full process tree so tool shells do not orphan.
+- One busy terminal tab no longer blocks writes or resize on other tabs.
+- Official login restores from the App agent-home mirror if `~/.grok` auth was wiped.
 - Windows titlebar drag moves the window again on older WebView2 (#1075).
 - Feishu remote-control setup shows the publish / availability guide (same as Lark).
 - Search no longer applies results after you close the palette (#1078).
@@ -31,6 +43,18 @@ See `docs/llm-wiki/release.md`.
 - Plugin authorization keeps secrets out of process command lines.
 
 **中文 · 修复**
+- 带图或附件发送时，流式回复过程中不再出现两条相同的用户气泡（#1119、#1124）。
+- 闲置重连后，Host 与乐观气泡竞态时不再把同一条用户消息画两次（#1124）。
+- 自定义中转在「思考中」下显示重试进度与等待提示，不再只有空白的「工作中」（#1126）。
+- 壁纸搜索分页时保留收藏与本地路径，并恢复多来源图库布局（#1120）。
+- 切换壁纸来源不再取消进行中的搜索；ZDR 隐私模式会给出明确的图生视频提示（#1121）。
+- 长会话在 Windows 触屏上滑动更跟手。不抬手慢滑也不再一顿一顿（#1122）。
+- Windows 上不再因会话锁内发流式事件或写工具日志而整窗卡死。
+- 打开会话时历史加载会超时，并保留已有缓存内容。
+- 重连不再因卡住的连接占用或 Stop 而无限等待。
+- Windows 结束 Agent 时会清理整棵进程树，避免工具子进程残留。
+- 一个繁忙终端标签页不再挡住其他标签页的输入或缩放。
+- 当 `~/.grok/auth.json` 被清掉时，会从 App agent-home 镜像恢复官方登录。
 - Windows 标题栏在旧版 WebView2 上又能拖动窗口（#1075）。
 - 飞书远程控制显示与 Lark 相同的「发布 / 可用性」引导步骤。
 - 关掉搜索面板后，迟到的结果不再写回（#1078）。
@@ -49,6 +73,8 @@ See `docs/llm-wiki/release.md`.
 
 ### Added
 - Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
+- Ctrl+Tab shows a recent-chat list while you hold Ctrl. Release Ctrl to open the highlighted chat (#1125).
+- Chat markdown renders Mermaid diagrams from fenced code blocks.
 - Wallpaper X can use Responses search with a clear fallback to CLI (#1088).
 - Wallpaper X Responses search shows validated images in batches as paths finish (#1089).
 - Wallpaper X Responses search reuses recent verified results for the same query (#1090).
@@ -57,10 +83,11 @@ See `docs/llm-wiki/release.md`.
 - Openverse and Pexels prefetch the next page after a successful search (#1097).
 - Wallpaper sources add a separate Web image search with safe preview download (#1099).
 - Wallpaper sources can browse your Grok Saved album after a secure sign-in check (#1103).
-- Ctrl+Tab jumps back to the last chat you used. Hold Ctrl and tap Tab to cycle further; Ctrl+Shift+Tab goes the other way.
 
 **中文 · 新增**
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
+- 按住 Ctrl+Tab 会弹出最近对话列表。松开 Ctrl 打开高亮的那一条（#1125）。
+- 聊天 Markdown 会渲染 fenced Mermaid 流程图。
 - 壁纸 X 可用 Responses 搜索，失败时清楚回退到 CLI（#1088）。
 - 壁纸 X 的 Responses 搜索会按完成批次逐步显示已校验图片（#1089）。
 - 壁纸 X 的 Responses 搜索会复用同一查询的近期已验证结果（#1090）。
@@ -69,23 +96,24 @@ See `docs/llm-wiki/release.md`.
 - Openverse / Pexels 在成功搜索后会预取下一页（#1097）。
 - 壁纸来源新增独立的 Web 图片搜索，并安全下载预览（#1099）。
 - 壁纸来源可在安全登录校验后浏览 Grok Saved 相册（#1103）。
-- Ctrl+Tab 切回上一个用过的对话。按住 Ctrl 再点 Tab 继续循环；Ctrl+Shift+Tab 反向。
 
 ### Changed
+- Finished Worked-for rails fold after the turn. Failed tools stay as one-line excerpts.
 - Sent quotes show the excerpt and comment in the bubble, not a notes chip.
+- Account quota sits in the user menu again, with remaining % beside the name.
 - Streaming chat, heatmap hover, and SSH sidebar refresh do less re-rendering (#1073).
 - Default workspace uses a house icon in the sidebar and composer (#1069).
 - Sidebar Other now uses the same name as the composer chip: Default workspace (#1067).
 - Startup skips TipTap and markdown preloads; Office and Settings load on demand (#1055, #1063).
-- Expanded sidebar pins remaining SuperGrok quota without opening the account menu (#1048). Settings is a footer gear; the account menu keeps theme and sign-in.
 
 **中文 · 变更**
+- 结束后的「Worked for」工具栏会收起。失败步骤保留为一行摘要。
 - 发送后的引用在气泡里直接显示摘录和评论，不再收成「N 条注释」。
+- 额度卡片回到用户菜单顶部，名字旁显示剩余百分比。
 - 流式对话、热力图像悬停与 SSH 侧栏刷新减少无效重渲染（#1073）。
 - 默认工作区在侧栏和输入框改用小房子图标（#1069）。
 - 侧栏「其他会话」与输入框统一为「默认工作区」（#1067）。
 - 启动不再预载 TipTap / markdown；Office 与设置页按需加载（#1055、#1063）。
-- 展开左边栏即可看到 SuperGrok 剩余额度，不必再点开账户菜单（#1048）。设置改为脚注齿轮；账户菜单只留主题和登录。
 
 ### Fixed
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.

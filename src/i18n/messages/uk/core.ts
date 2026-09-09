@@ -1,6 +1,8 @@
 /** uk messages — domain: core */
 export const ukCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Завантаження оригіналу…",
+  "image.originalFailed": "Не вдалося завантажити оригінал. Попередній перегляд залишається доступним.",
   "app.tagline": "MIT · Неофіційний · Сестринський проєкт grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · Неофіційний · Сестринський проєкт grok-go",
   "window.minimize": "Згорнути",
@@ -122,6 +124,8 @@ export const ukCore = {
   "shortcuts.closeSideTab": "Закрити бічну вкладку (вікно, якщо вкладок немає)",
   "shortcuts.sidebarSessionNav": "Наступний / попередній чат на бічній панелі (фокус у списку)",
   "shortcuts.recentSessionMru": "Наступний / попередній нещодавно використаний чат",
+  "shortcuts.recentSessionMruPanel": "Нещодавні чати",
+  "shortcuts.recentSessionMruPanelHint": "Відпустіть Ctrl, щоб відкрити",
   "shortcuts.doctor": "Діагностика",
   "shortcuts.liveVoice": "Запустити Live Voice",
   "shortcuts.off": "Вимкнено",

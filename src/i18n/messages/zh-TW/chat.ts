@@ -95,10 +95,14 @@ export const zhTWChat = {
   "chat.thinkingLabel": "思考中",
   /** 進行中裸思考摺疊頭：思考中 + 計時（與工作中對稱）。 */
   "chat.thinkingFor": "思考中 {duration}",
+  "chat.waitingFirstToken": "仍在等待模型首個輸出…",
+  "chat.providerRetrying": "中轉重試 {attempt}/{max}",
+  "chat.providerRetryingWithReason": "中轉重試 {attempt}/{max}：{reason}",
   /** 已完成工作階段 + 時長（與思考了對稱）。 */
   "chat.workedFor": "工作了 {duration}",
   /** 無時長時的已完成摺疊頭（統一「工作了」，不用「已工作/工作」）。 */
   "chat.worked": "工作了",
+  "chat.phaseErrorsMore": "還有 {n} 個失敗",
   /** 進行中工作階段 + 計時。 */
   "chat.workingFor": "工作中 {duration}",
   "chat.working": "工作中",
@@ -155,6 +159,10 @@ export const zhTWChat = {
   "chat.codeWrap": "啟用自動換行",
   "chat.codeUnwrap": "取消自動換行",
   "chat.lineNumbers": "行號",
+  "chat.mermaidSource": "查看原始碼",
+  "chat.mermaidDiagram": "查看圖表",
+  "chat.mermaidLoading": "正在渲染圖表…",
+  "chat.mermaidError": "無法渲染圖表",
   "chat.externalLinkConfirmTitle": "開啟外部連結？",
   "chat.externalLinkConfirmMessage": "即將在瀏覽器中開啟：\n{url}",
   "chat.externalLinkOpen": "開啟連結",

@@ -1,6 +1,8 @@
 /** es messages — domain: core */
 export const esCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Cargando original…",
+  "image.originalFailed": "No se pudo cargar el original. La vista previa sigue disponible.",
   "app.tagline": "MIT · No oficial · Proyecto hermano grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · No oficial · Proyecto hermano grok-go",
   "window.minimize": "Minimizar",
@@ -122,6 +124,8 @@ export const esCore = {
   "shortcuts.closeSideTab": "Cerrar pestaña lateral (la ventana si no hay ninguna abierta)",
   "shortcuts.sidebarSessionNav": "Chat siguiente / anterior en la barra lateral (foco en la lista)",
   "shortcuts.recentSessionMru": "Chat reciente siguiente / anterior",
+  "shortcuts.recentSessionMruPanel": "Chats recientes",
+  "shortcuts.recentSessionMruPanelHint": "Suelta Ctrl para abrir",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Iniciar Live Voice",
   "shortcuts.off": "Desactivado",

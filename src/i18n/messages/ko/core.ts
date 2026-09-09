@@ -1,6 +1,8 @@
 /** ko messages — domain: core */
 export const koCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "원본을 불러오는 중…",
+  "image.originalFailed": "원본을 불러오지 못했습니다. 미리보기는 계속 볼 수 있습니다.",
   "app.tagline": "MIT · 비공식 · 자매 프로젝트 grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · 비공식 · 자매 프로젝트 grok-go",
   "window.minimize": "최소화",
@@ -122,6 +124,8 @@ export const koCore = {
   "shortcuts.closeSideTab": "사이드 탭 닫기 (열린 탭이 없으면 창)",
   "shortcuts.sidebarSessionNav": "사이드바에서 다음 / 이전 대화 (목록에 포커스)",
   "shortcuts.recentSessionMru": "최근 사용한 대화 다음 / 이전",
+  "shortcuts.recentSessionMruPanel": "최근 사용한 대화",
+  "shortcuts.recentSessionMruPanelHint": "Ctrl을 놓으면 열립니다",
   "shortcuts.doctor": "닥터",
   "shortcuts.liveVoice": "라이브 음성 시작",
   "shortcuts.off": "끄기",

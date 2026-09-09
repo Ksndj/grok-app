@@ -10,7 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { useThemeShell } from "@/providers/ThemeProvider";
+import { useThemeShell } from "@/providers/ThemeShellContext";
 import { usePetCompanion } from "@/hooks/usePetCompanion";
 import { useFloatingMenu } from "@/lib/floatingMenu";
 import { restoreSessionGate } from "@/lib/sessionGateRestore";
@@ -48,6 +48,7 @@ import {
   shouldConfirmQuit,
 } from "@/lib/confirmQuit";
 import { QUIT_DOUBLE_PRESS_MS } from "@/lib/doublePressQuit";
+import { setProviderRetryStatus } from "@/lib/providerRetryStatusStore";
 import { useDoublePressQuit } from "@/hooks/useDoublePressQuit";
 import {
   canLiveParticipate,
@@ -2017,14 +2018,8 @@ export function AppWorkbench() {
   /** Queue item open in the edit dialog (`null` when closed). */
   /** Effort changes respawn the CLI; sends must wait for that write to settle. */
   const effortApplyRef = useRef<Promise<void>>(Promise.resolve());
-  /** Live provider retry progress (session://retry); cleared on success/stop/error. */
-  // Value intentionally unbound (retry chip hidden): only the setter is kept
-  // for cleanup calls. See the hidden-retry comment at the status-pill site.
-  const [, setRetryStatus] = useState<{
-    attempt: number;
-    maxRetries: number;
-    reason: string;
-  } | null>(null);
+  /** Live provider retry progress — store lives outside the shell (Thinking reads it). */
+  const setRetryStatus = setProviderRetryStatus;
   /** Epoch ms when the current agent turn became busy (for elapsed UI). */
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   /**
@@ -3291,8 +3286,21 @@ export function AppWorkbench() {
         if (result.scheduledFromJournal) {
           sessionNavHostRef.current.catalog.markScheduled(sessionId);
         }
+        if (viewingSessionIdRef.current === sessionId) {
+          setLocalError(null);
+        }
       } else {
         setContextUsage(result.usage);
+        if (
+          viewingSessionIdRef.current === sessionId &&
+          (result.status === "timed_out" || result.status === "failed")
+        ) {
+          setLocalError(
+            result.status === "timed_out"
+              ? tr("session.journalLoadTimedOut")
+              : tr("session.journalLoadFailed"),
+          );
+        }
       }
     };
     host.hydrate.applyReconcileResult = (sessionId, result) => {

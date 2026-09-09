@@ -1,6 +1,8 @@
 /** Simplified Chinese messages — domain: core */
 export const zhCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "正在加载原文件…",
+  "image.originalFailed": "原文件加载失败，仍可查看预览。",
   "app.tagline": "MIT · 非 xAI 官方 · 姐妹项目 grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · 非 xAI 官方 · 姐妹项目 grok-go",
   "window.minimize": "最小化",
@@ -122,6 +124,8 @@ export const zhCore = {
   "shortcuts.closeSideTab": "关闭侧边标签（无标签时关闭窗口）",
   "shortcuts.sidebarSessionNav": "侧栏上下切换会话（焦点在列表内）",
   "shortcuts.recentSessionMru": "最近用过的对话（上一个 / 下一个）",
+  "shortcuts.recentSessionMruPanel": "最近用过的对话",
+  "shortcuts.recentSessionMruPanelHint": "松开 Ctrl 打开",
   "shortcuts.doctor": "体检",
   "shortcuts.liveVoice": "开始实时语音",
   "shortcuts.off": "关闭",

@@ -1,6 +1,8 @@
 /** it messages — domain: core */
 export const itCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Caricamento dell’originale…",
+  "image.originalFailed": "Impossibile caricare l’originale. L’anteprima è ancora disponibile.",
   "app.tagline": "MIT · Non ufficiale · Progetto gemello grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · Non ufficiale · Progetto gemello grok-go",
   "window.minimize": "Riduci a icona",
@@ -122,6 +124,8 @@ export const itCore = {
   "shortcuts.closeSideTab": "Chiudi scheda laterale (finestra se nessuna è aperta)",
   "shortcuts.sidebarSessionNav": "Chat successiva / precedente nella barra laterale (focus nell’elenco)",
   "shortcuts.recentSessionMru": "Chat recente successiva / precedente",
+  "shortcuts.recentSessionMruPanel": "Chat recenti",
+  "shortcuts.recentSessionMruPanelHint": "Rilascia Ctrl per aprire",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Avvia Live Voice",
   "shortcuts.off": "Disattivato",

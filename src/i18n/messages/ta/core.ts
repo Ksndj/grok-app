@@ -1,6 +1,8 @@
 /** ta messages — domain: core */
 export const taCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "அசல் கோப்பு ஏற்றப்படுகிறது…",
+  "image.originalFailed": "அசல் கோப்பை ஏற்ற முடியவில்லை. முன்னோட்டம் தொடர்ந்து கிடைக்கும்.",
   "app.tagline": "MIT · அதிகாரப்பூர்வமற்றது · சகோதரத் திட்டம் grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · அதிகாரப்பூர்வமற்றது · சகோதரத் திட்டம் grok-go",
   "window.minimize": "சிறிதாக்கு",
@@ -122,6 +124,8 @@ export const taCore = {
   "shortcuts.closeSideTab": "பக்க தாவலை மூடு (சாளரம் எதுவும் திறக்கப்படாத போது)",
   "shortcuts.sidebarSessionNav": "பக்கப்பட்டியில் அடுத்த / முந்தைய உரையாடல் (பட்டியலில் கவனம்)",
   "shortcuts.recentSessionMru": "சமீபத்தில் பயன்படுத்திய அடுத்த / முந்தைய உரையாடல்",
+  "shortcuts.recentSessionMruPanel": "சமீபத்திய உரையாடல்கள்",
+  "shortcuts.recentSessionMruPanelHint": "திறக்க Ctrl-ஐ விடுங்கள்",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "நேரடிக் குரலைத் தொடங்கவும்",
   "shortcuts.off": "அணைப்பு",

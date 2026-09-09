@@ -95,10 +95,15 @@ export const enChat = {
   "chat.thinkingLabel": "Thinking",
   /** Live bare-thought chrome with wall-clock (matches Working for …). */
   "chat.thinkingFor": "Thinking for {duration}",
+  "chat.waitingFirstToken": "Still waiting for the first reply…",
+  "chat.providerRetrying": "Retrying provider {attempt}/{max}",
+  "chat.providerRetryingWithReason": "Retrying provider {attempt}/{max}: {reason}",
   /** Finished work phase with duration (matches Thought for …). */
   "chat.workedFor": "Worked for {duration}",
   /** Finished work phase without a usable duration. */
   "chat.worked": "Worked",
+  /** Folded Worked-for: remaining failed tools past the excerpt cap. */
+  "chat.phaseErrorsMore": "{n} more failed",
   /** Live work phase with wall-clock. */
   "chat.workingFor": "Working for {duration}",
   "chat.working": "Working",
@@ -155,6 +160,10 @@ export const enChat = {
   "chat.codeWrap": "Wrap lines",
   "chat.codeUnwrap": "No wrap",
   "chat.lineNumbers": "Line numbers",
+  "chat.mermaidSource": "Show source",
+  "chat.mermaidDiagram": "Show diagram",
+  "chat.mermaidLoading": "Rendering diagram…",
+  "chat.mermaidError": "Could not render diagram",
   "chat.externalLinkConfirmTitle": "Open external link?",
   "chat.externalLinkConfirmMessage": "You are about to open this link in your browser:\n{url}",
   "chat.externalLinkOpen": "Open link",

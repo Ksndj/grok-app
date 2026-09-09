@@ -141,7 +141,7 @@ import {
   SIDEBAR_SHOW_RELATIVE_TIME_CHANGE_EVENT,
 } from "@/lib/sidebarShowRelativeTimePref";
 import type { WallpaperSourceTab } from "@/components/WallpaperSourceModal";
-import { useThemeShell } from "@/providers/ThemeProvider";
+import { useThemeShell } from "@/providers/ThemeShellContext";
 import type { SettingsModel } from "@/providers/SettingsModelContext";
 import { notifyAppearanceChanged } from "@/lib/appearanceLiveSync";
 
@@ -184,6 +184,16 @@ export function useAppearanceEditorModel(opts: {
   const theme = useThemeShell();
   const resolvedLocale = resolveLocale(locale);
   const [catalogRev, setCatalogRev] = useState(0);
+
+  // Local 30s clock for the schedule honesty preview — previously consumed
+  // theme.scheduleClock from ThemeProvider, which forced every context
+  // consumer (including AppWorkbench) to re-render on every 60s tick.
+  const [scheduleClock, setScheduleClock] = useState(() => new Date());
+  useEffect(() => {
+    if (!theme.themeSchedule.enabled) return;
+    const id = window.setInterval(() => setScheduleClock(new Date()), 30_000);
+    return () => window.clearInterval(id);
+  }, [theme.themeSchedule.enabled]);
   useEffect(() => {
     let cancelled = false;
     void loadLocaleCatalog(resolvedLocale).then(() => {
@@ -482,9 +492,9 @@ export function useAppearanceEditorModel(opts: {
       deriveThemeScheduleHonesty({
         preference: theme.themePreference,
         schedule: theme.themeSchedule,
-        now: theme.scheduleClock,
+        now: scheduleClock,
       }),
-    [theme.themePreference, theme.themeSchedule, theme.scheduleClock],
+    [theme.themePreference, theme.themeSchedule, scheduleClock],
   );
 
   const sectionNav = useMemo(() => getNavDef("appearance"), []);

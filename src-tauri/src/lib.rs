@@ -224,7 +224,10 @@ mod voice_stt;
 
 mod voice_tools;
 
+mod wallpaper_catalog;
 mod wallpaper_grok_album;
+mod wallpaper_imagine_video;
+mod wallpaper_library;
 mod wallpaper_provider_search;
 mod wallpaper_remote_commands;
 mod wallpaper_remote_media;
@@ -1722,7 +1725,23 @@ pub fn run() {
 
             commands::wallpaper_imagine,
 
+            commands::wallpaper_image_to_video,
+
+            commands::wallpaper_image_to_video_cancel,
+
+            commands::wallpaper_image_edit,
+
+            commands::wallpaper_import_image,
+
             commands::wallpaper_library_list,
+
+            commands::wallpaper_library_page,
+
+            commands::wallpaper_library_remember,
+
+            commands::wallpaper_library_lookup,
+
+            commands::wallpaper_library_find_by_id,
 
             commands::wallpaper_library_delete,
 

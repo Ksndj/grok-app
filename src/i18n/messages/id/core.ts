@@ -1,6 +1,8 @@
 /** id messages — domain: core */
 export const idCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Memuat berkas asli…",
+  "image.originalFailed": "Berkas asli tidak dapat dimuat. Pratinjau tetap tersedia.",
   "app.tagline": "MIT · Tidak resmi · Proyek saudara grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · Tidak resmi · Proyek saudara grok-go",
   "window.minimize": "Perkecil",
@@ -122,6 +124,8 @@ export const idCore = {
   "shortcuts.closeSideTab": "Tutup tab sisi (jendela jika tidak ada yang terbuka)",
   "shortcuts.sidebarSessionNav": "Obrolan berikutnya / sebelumnya di bilah sisi (fokus di daftar)",
   "shortcuts.recentSessionMru": "Obrolan terbaru berikutnya / sebelumnya",
+  "shortcuts.recentSessionMruPanel": "Obrolan terbaru",
+  "shortcuts.recentSessionMruPanelHint": "Lepas Ctrl untuk membuka",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Mulai Live Voice",
   "shortcuts.off": "Mati",

@@ -1,6 +1,8 @@
 /** pt-BR messages — domain: core */
 export const ptBRCore = {
   "app.name": "Grok",
+  "image.loadingOriginal": "Carregando original…",
+  "image.originalFailed": "Não foi possível carregar o original. A prévia continua disponível.",
   "app.tagline": "MIT · Não oficial · Projeto irmão grok-go",
   "app.versionFooter": "Grok v0.2.33 · MIT · Não oficial · Projeto irmão grok-go",
   "window.minimize": "Minimizar",
@@ -122,6 +124,8 @@ export const ptBRCore = {
   "shortcuts.closeSideTab": "Fechar aba lateral (janela quando nenhuma estiver aberta)",
   "shortcuts.sidebarSessionNav": "Próximo / anterior chat na barra lateral (foco na lista)",
   "shortcuts.recentSessionMru": "Chat recente seguinte / anterior",
+  "shortcuts.recentSessionMruPanel": "Chats recentes",
+  "shortcuts.recentSessionMruPanelHint": "Solte Ctrl para abrir",
   "shortcuts.doctor": "Doctor",
   "shortcuts.liveVoice": "Iniciar Live Voice",
   "shortcuts.off": "Desligado",
