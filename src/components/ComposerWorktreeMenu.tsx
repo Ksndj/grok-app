@@ -438,7 +438,8 @@ export function ComposerWorktreeMenu({
                       ? labels.branchesLoading ||
                         labels.worktreesLoading ||
                         "…"
-                      : branchesAvailable === false
+                      : branchesAvailable === false ||
+                          !!branchesReason?.trim()
                         ? labels.branchesUnavailable ||
                           labels.worktreesUnavailable
                         : labels.branchesEmpty || labels.worktreesEmpty}
