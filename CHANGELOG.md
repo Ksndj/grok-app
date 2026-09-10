@@ -13,6 +13,12 @@ See `docs/llm-wiki/release.md`.
 
 ## [Unreleased]
 
+### Added
+- The composer branch chip can switch git branches in the current folder. Remote-only rows create a local tracking branch; a branch already checked out in another worktree opens that worktree instead.
+
+**中文 · 新增**
+- 输入框上的分支 chip 可在当前目录切换 git 分支。仅远程存在的分支会建本地跟踪分支；已在其他 worktree 检出的则切到那个 worktree。
+
 ### Fixed
 - Math formulas render with one matching KaTeX version again. The bundled CSS had drifted ahead of the JS.
 - Wallpaper no longer flashes black while streaming or following the chat tail.
@@ -104,7 +110,6 @@ See `docs/llm-wiki/release.md`.
 - 插件授权密钥不再出现在进程命令行中。
 
 ### Added
-- The composer branch chip can switch git branches in the current folder. Remote-only rows create a local tracking branch; a branch already checked out in another worktree opens that worktree instead.
 - Ctrl+Tab shows a recent-chat list while you hold Ctrl. Release Ctrl to open the highlighted chat (#1125).
 - Chat markdown renders Mermaid diagrams from fenced code blocks.
 - Wallpaper X can use Responses search with a clear fallback to CLI (#1088).
@@ -117,7 +122,6 @@ See `docs/llm-wiki/release.md`.
 - Wallpaper sources can browse your Grok Saved album after a secure sign-in check (#1103).
 
 **中文 · 新增**
-- 输入框上的分支 chip 可在当前目录切换 git 分支。仅远程存在的分支会建本地跟踪分支；已在其他 worktree 检出的则切到那个 worktree。
 - 按住 Ctrl+Tab 会弹出最近对话列表。松开 Ctrl 打开高亮的那一条（#1125）。
 - 聊天 Markdown 会渲染 fenced Mermaid 流程图。
 - 壁纸 X 可用 Responses 搜索，失败时清楚回退到 CLI（#1088）。
