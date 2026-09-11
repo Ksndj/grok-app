@@ -66,6 +66,7 @@ mod wsl_backend;
 mod ssh_remote;
 
 mod side_browser_blob;
+mod side_browser_google_auth;
 mod side_browser_host;
 
 mod commands;
@@ -228,6 +229,7 @@ mod wallpaper_catalog;
 mod wallpaper_grok_album;
 mod wallpaper_imagine_video;
 mod wallpaper_library;
+mod wallpaper_media_metadata;
 mod wallpaper_provider_search;
 mod wallpaper_remote_commands;
 mod wallpaper_remote_media;
@@ -1734,6 +1736,10 @@ pub fn run() {
             commands::wallpaper_image_to_video_cancel,
 
             commands::wallpaper_image_edit,
+
+            commands::wallpaper_imagine_recover_catalog,
+
+            commands::wallpaper_imagine_pending_recoveries,
 
             commands::wallpaper_import_image,
 

@@ -15,6 +15,10 @@ import { usePetCompanion } from "@/hooks/usePetCompanion";
 import { useFloatingMenu } from "@/lib/floatingMenu";
 import { restoreSessionGate } from "@/lib/sessionGateRestore";
 import { DEFAULT_WALLPAPER_FOCUS } from "@/lib/themeSkin";
+import {
+  setStreamPerfActive,
+  shouldSyncStreamPerfDataset,
+} from "@/lib/streamRenderPolicy";
 import { formatRelativeTime } from "@/lib/accountUi";
 import { loadConfirmExternalLinksPref } from "@/lib/externalLinkPref";
 import {
@@ -543,19 +547,11 @@ import { resolveSidePathDeepLink } from "@/lib/sidePathDeepLink";
 import { WorkbenchAppDialogStage } from "@/app/WorkbenchAppDialogStage";
 import { WorkbenchComposerModals } from "@/app/WorkbenchComposerModals";
 import {
-  EMPTY_SESSION_FILE_CHANGES,
   mergeSessionChange,
   sessionChangesFromMessages,
   summarizeSessionChanges,
-  type SessionFileChange,
 } from "@/lib/sessionChanges";
 
-import {
-  gitDirtySummariesEqual,
-  summarizeGitDirty,
-  type GitDirtySummary,
-} from "@/lib/workspaceGit";
-import { startVisibilityPoll } from "@/lib/visibilityPoll";
 
 const AutomationsPage = lazy(async () => {
   const m = await import("@/components/AutomationsPage");
@@ -683,6 +679,9 @@ import {
   createSessionNavHost,
   useSessionNavigation,
 } from "@/hooks/useSessionNavigation";
+import { useGitDirtyStatus } from "@/hooks/useGitDirtyStatus";
+import { useSessionFileChanges } from "@/hooks/useSessionFileChanges";
+import { ERROR_BANNER_SETTINGS_ROUTE, isErrorBannerDismissOnly } from "@/lib/errorBannerActions";
 import { WorkbenchSessionTree } from "@/app/WorkbenchSessionTree";
 import { WorkbenchSidebar } from "@/app/WorkbenchSidebar";
 import { WorkbenchMain } from "@/app/WorkbenchMain";
@@ -976,15 +975,8 @@ export function AppWorkbench() {
    * Files written/edited by agent tools per session (Changes / diff panel).
    * Live tool events may enrich entries with before/after snippets.
    */
-  const [sessionChangesById, setSessionChangesById] = useState<
-    Record<string, SessionFileChange[]>
-  >({});
-  /**
-   * Workspace git dirty summary for the active project (composer chip).
-   * Null when not a repo, unavailable, clean, or no active project.
-   */
-  const [gitDirtySummary, setGitDirtySummary] =
-    useState<GitDirtySummary | null>(null);
+  const { sessionChangesById, setSessionChangesById, changesFor } =
+    useSessionFileChanges();
   const {
     getDraft,
     setDraft,
@@ -1989,6 +1981,22 @@ export function AppWorkbench() {
     hostRef: gitWorktreeHostRef,
     projectPath: activeProject?.path ?? null,
   });
+
+  const { gitDirtySummary } = useGitDirtyStatus({
+    projectPath: effectiveProjectPath,
+    busy:
+      session.state === "streaming" || session.state === "awaiting_permission",
+    busyKey: session.sessionId,
+    onStatus: (path, status) => {
+      setSideIsGitProject(!!status?.available);
+      applyStatusBranch(path, status);
+    },
+  });
+  // Clear Review git gate when no effective project path (hook skips onStatus).
+  useEffect(() => {
+    const path = effectiveProjectPath?.trim() || null;
+    if (!path) setSideIsGitProject(false);
+  }, [effectiveProjectPath, setSideIsGitProject]);
   /** Host stream-stall prompt (I06); null when dismissed or not stalled. */
   const [streamStall, setStreamStall] = useState<{
     sessionId?: string;
@@ -3040,7 +3048,6 @@ export function AppWorkbench() {
     setContextUsage,
     setRetryStatus,
     setStreamStall,
-    setTurnStartedAt,
     startTurnClock,
     restartTurnClock,
     clearTurnClock,
@@ -3071,7 +3078,6 @@ export function AppWorkbench() {
     trRef,
     tr,
     modeRef,
-    maxConcurrentAgents,
     streamStallSeconds,
   });
 
@@ -5516,13 +5522,21 @@ export function AppWorkbench() {
   const lastUserMessageId = transcriptMeta.lastUserId;
 
   // Streaming perf mode — shrink browse overscan on integrated GPU Retina.
-  // Do not zero the flag in the update cleanup (that flashes 1→0→1).
-  // Turn it off after paint so it does not restyle in the same frame as settle.
+  // Module flag drives JS readers; html data-stream-perf is only for CSS that
+  // is already gated off wallpaper. Flipping html attrs while wallpaper frost
+  // is active invalidates the macOS blur compositor (#1158).
   useEffect(() => {
     const on =
       session.state === "streaming" ||
       session.state === "awaiting_permission" ||
       transcriptMeta.hasStreamingAssistant;
+    setStreamPerfActive(on);
+    const wallpaperActive =
+      document.documentElement.getAttribute("data-wallpaper") === "1";
+    if (!shouldSyncStreamPerfDataset({ wallpaperActive })) {
+      delete document.documentElement.dataset.streamPerf;
+      return;
+    }
     if (on) {
       document.documentElement.dataset.streamPerf = "1";
       return;
@@ -5534,7 +5548,8 @@ export function AppWorkbench() {
   }, [session.state, transcriptMeta.hasStreamingAssistant]);
   useEffect(() => {
     return () => {
-      document.documentElement.dataset.streamPerf = "0";
+      setStreamPerfActive(false);
+      delete document.documentElement.dataset.streamPerf;
     };
   }, []);
 
@@ -8878,10 +8893,7 @@ export function AppWorkbench() {
   /** Session file-changes chip (+/− or N files); hidden when empty. */
   const sessionChangesSummary = useMemo(() => {
     const sid = session.sessionId || "";
-    const list = sid
-      ? (sessionChangesById[sid] ?? EMPTY_SESSION_FILE_CHANGES)
-      : EMPTY_SESSION_FILE_CHANGES;
-    return summarizeSessionChanges(list);
+    return summarizeSessionChanges(changesFor(sid));
   }, [session.sessionId, sessionChangesById]);
 
   // Reset find when switching conversation (keep open across same session).
@@ -9749,70 +9761,6 @@ export function AppWorkbench() {
     },
     [requestMove, session.sessionId, sessions],
   );
-
-  /**
-   * Poll workspace git status for the effective project path so the composer
-   * dirty chip stays current and Review stays gated on a live `available`
-   * flag (a one-shot probe at bind time can fail, then never retry — env
-   * menu then shows git while 变更 toast-closes as "not a git project").
-   * Soft-fail; no toast spam.
-   */
-  const gitDirtyReqRef = useRef(0);
-  const refreshGitDirtyStatus = useCallback(async () => {
-    const path = effectiveProjectPath?.trim() || null;
-    if (!path || !api.isTauri()) {
-      gitDirtyReqRef.current += 1;
-      setGitDirtySummary((prev) => (prev == null ? prev : null));
-      setSideIsGitProject(false);
-      return;
-    }
-    const reqId = ++gitDirtyReqRef.current;
-    try {
-      const status = await api.gitStatus(path);
-      if (reqId !== gitDirtyReqRef.current) return;
-      setSideIsGitProject(!!status?.available);
-      const next = summarizeGitDirty(status);
-      setGitDirtySummary((prev) =>
-        gitDirtySummariesEqual(prev, next) ? prev : next,
-      );
-      // Same poll already has HEAD. Patch the composer branch chip so an
-      // in-place checkout does not stay stale until the menu is clicked.
-      applyStatusBranch(path, status);
-    } catch {
-      if (reqId !== gitDirtyReqRef.current) return;
-      setGitDirtySummary((prev) => (prev == null ? prev : null));
-    }
-  }, [effectiveProjectPath, applyStatusBranch, setSideIsGitProject]);
-
-  useEffect(() => {
-    void refreshGitDirtyStatus();
-    // Soft poll while a project is bound; refresh sooner on focus.
-    // Faster while a turn is live — agent may `git switch` mid-session.
-    // Ticks pause while the window is hidden — a minimized app has nothing
-    // to paint, and `git status` is a process spawn per poll.
-    const path = effectiveProjectPath?.trim() || null;
-    if (!path || !api.isTauri()) return;
-    const busy =
-      session.state === "streaming" || session.state === "awaiting_permission";
-    const intervalMs = busy ? 2000 : 8000;
-    const poll = startVisibilityPoll({
-      tick: () => void refreshGitDirtyStatus(),
-      setIntervalFn: (handler) => window.setInterval(handler, intervalMs),
-    });
-    const onFocus = () => {
-      void refreshGitDirtyStatus();
-    };
-    window.addEventListener("focus", onFocus);
-    return () => {
-      poll.dispose();
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [
-    effectiveProjectPath,
-    refreshGitDirtyStatus,
-    session.sessionId,
-    session.state,
-  ]);
 
   /**
    * After a project is created/updated: refresh list, expand, optionally trust
@@ -11024,43 +10972,21 @@ export function AppWorkbench() {
   const runErrorBannerAction = useCallback(
     (action: NonNullable<ErrorBannerView["primary"]>) => {
       setErrorDetailOpen(false);
-      switch (action.id) {
+      const { id } = action;
+      // Settings navigation: data-driven from the routing table.
+      const route = ERROR_BANNER_SETTINGS_ROUTE[id];
+      if (route) {
+        setLocalError(null);
+        navigateSettings(route.section, route.tab);
+        return;
+      }
+      switch (id) {
         case "reconnect":
           retryAgentConnect();
           break;
         case "open_doctor":
           setLocalError(null);
           openDoctor();
-          break;
-        case "open_runtime":
-          setLocalError(null);
-          navigateSettings("runtime");
-          break;
-        case "upgrade_cli":
-          setLocalError(null);
-          navigateSettings("runtime");
-          break;
-        case "open_network":
-          setLocalError(null);
-          navigateSettings("runtime", "network");
-          break;
-        case "open_account":
-          setLocalError(null);
-          navigateSettings("account");
-          break;
-        case "open_providers":
-          setLocalError(null);
-          // Providers live under account / extensions path — account is the
-          // login+key surface; extensions holds MCP. Prefer account for keys.
-          navigateSettings("account");
-          break;
-        case "open_permissions":
-          setLocalError(null);
-          navigateSettings("general", "permissions");
-          break;
-        case "open_extensions":
-          setLocalError(null);
-          navigateSettings("extensions");
           break;
         case "open_mcp":
           setLocalError(null);
@@ -11078,27 +11004,25 @@ export function AppWorkbench() {
           setLocalError(null);
           void addProject(false);
           break;
-        case "dismiss":
-        case "keep_waiting":
-          // keep_waiting is for the stream-stall banner (clears prompt only).
-          setLocalError(null);
-          break;
         case "cancel_turn":
           setLocalError(null);
           void stop();
           break;
         default:
+          // dismiss / keep_waiting: clear the banner (keep_waiting is the
+          // stream-stall prompt — clears the prompt, keeps the turn).
+          if (isErrorBannerDismissOnly(id)) setLocalError(null);
           break;
       }
     },
     [
       activeProject,
       addProject,
-      ensureConnected,
       navigateSettings,
       openDoctor,
       openMcpModal,
       relocateProject,
+      retryAgentConnect,
       stop,
       trustProject,
     ],
@@ -12826,10 +12750,7 @@ export function AppWorkbench() {
             retryAgentConnect={retryAgentConnect}
             runErrorBannerAction={runErrorBannerAction}
             session={session}
-            sessionChanges={
-              sessionChangesById[session.sessionId || ""] ??
-              EMPTY_SESSION_FILE_CHANGES
-            }
+            sessionChanges={changesFor(session.sessionId || "")}
             sessionJsonSchema={sessionJsonSchema}
             sessionTranscriptStore={sessionTranscriptStore}
             sessions={sessions}
@@ -13108,11 +13029,9 @@ export function AppWorkbench() {
           setSideWorkbench={setSideWorkbench}
           sideDockComposer={sideDockComposer}
           onToggleSideDockComposer={toggleDockComposer}
-          sessionChanges={
-            sessionChangesById[reviewSessionId] ??
-            sessionChangesById[session.sessionId || ""] ??
-            EMPTY_SESSION_FILE_CHANGES
-          }
+          sessionChanges={changesFor(
+            reviewSessionId ?? (session.sessionId || ""),
+          )}
           reviewFocusPath={reviewFocus?.path ?? null}
           reviewFocusToken={reviewFocus?.token ?? 0}
           reviewPinnedPaths={reviewFocus?.pinnedPaths ?? []}

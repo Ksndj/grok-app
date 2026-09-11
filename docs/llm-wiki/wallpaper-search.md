@@ -251,11 +251,20 @@ secrets commands; the renderer never receives the stored key. A rejected key
 opens an editable replacement field, removal requires an in-app confirmation,
 and search stays disabled while credential status is unknown or unavailable.
 
-Provider results use the bounded Host thumbnail path and keep their source,
-author and licence links separate from the image-preview action. A thumbnail
-failure leaves the result card available so selecting it can still fetch the
-validated original. Initial searches replace the old gallery; explicit “load
-more” appends deduplicated results while leaving current cards selectable.
+Provider results use the provider's dedicated thumbnail URL through the bounded
+Host thumbnail path, falling back to the validated original only when no safe
+thumbnail URL exists. Once a result is present in the local catalog, its card
+uses the loopback media endpoint instead of downloading the remote thumbnail
+again. Remote image requests normally advertise only formats supported by the
+Host decoder; in particular, they never advertise AVIF and then fail thumbnail
+decoding. Openverse's fixed thumbnail endpoint requires a low-priority wildcard
+fallback on a cold request, so only that exact endpoint receives one; its response
+still passes the same MIME, signature and decoder validation. Source, author and
+licence links remain separate from the image-preview action. A thumbnail failure
+leaves the result card available so selecting it can still fetch the validated
+original. Initial searches replace the old gallery;
+explicit “load more” appends deduplicated results while leaving current cards
+selectable.
 The load-more action sits after the current cards inside the result scroller.
 Paged grids keep DOM order so revealing a prefetched page does not redistribute
 existing cards; known media dimensions preserve each thumbnail ratio, with a
@@ -293,8 +302,9 @@ clears its prior continuation and browsing snapshot.
 
 The local wallpaper library keeps its media files in the existing wallpaper
 root and stores only bounded metadata in an atomic `.catalog.json`. Records have
-a stable media ID, source and purpose, favorite state, known dimensions, optional
-prompt/generation lineage, and sanitized HTTPS attribution fields. Remote media
+a stable media ID, source and purpose, favorite state, measured dimensions and
+video duration when the container exposes them, optional prompt/generation
+lineage, and sanitized HTTPS attribution fields. Remote media
 identity is stored as a source-scoped SHA-256 key; raw media URLs, credentials,
 headers and private album responses are not written to the catalog.
 
@@ -406,7 +416,20 @@ unmounting terminates the process tree, ignores late renderer results and remove
 failed task output. Successful media is registered in the catalog as generated
 content with the audited prompt and parameters; edit and video records also keep
 the source media as their parent. A catalog write failure preserves the generated
-file and returns `catalog_write_failed` without silently rerunning generation.
+file and returns that verified gallery item with `catalog_write_failed`, never an
+empty result and never a second generation. The Host also writes a bounded recovery
+descriptor under the wallpaper root. Only its opaque UUID crosses IPC; output and
+parent relative paths, byte sizes, SHA-256 hashes, prompt and generation parameters
+remain Host-owned. Pending descriptors are rediscovered after restart.
+
+The explicit retry action performs only the catalog transaction. It revalidates the
+UUID, root containment, media kind, byte size and hashes of both output and parent
+before restoring the original lineage. Missing or replaced files fail closed,
+concurrent/repeated retries are idempotent, and late renderer completions cannot
+update a closed picker or a different source.
+Requested video duration remains a generation parameter; MP4/WebM dimensions and
+duration are measured from the saved file and stored separately. Existing video
+records are upgraded on the next library scan without changing their media ID.
 
 Upstream failures are classified only after auditing the complete tool log. Known
 tool-owned HTTP and transport prefixes map to stable auth, access, rate-limit,

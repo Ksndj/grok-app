@@ -8,7 +8,7 @@ pub async fn memory_clear(
     cwd: Option<String>,
     scope: Option<String>,
 ) -> Result<crate::agent_memory::MemoryClearResult, String> {
-    let settings = store::load_settings();
+    let settings = store::load_settings_async().await;
     let path = cwd
         .as_deref()
         .map(str::trim)
@@ -35,7 +35,7 @@ pub async fn memory_clear(
 pub async fn memory_list(
     cwd: Option<String>,
 ) -> Result<crate::agent_memory::MemoryListResult, String> {
-    let settings = store::load_settings();
+    let settings = store::load_settings_async().await;
     let path = cwd
         .as_deref()
         .map(str::trim)
@@ -56,7 +56,7 @@ pub async fn memory_list(
 pub async fn memory_delete_file(
     path: String,
 ) -> Result<crate::agent_memory::MemoryDeleteResult, String> {
-    let settings = store::load_settings();
+    let settings = store::load_settings_async().await;
     let p = std::path::PathBuf::from(path.trim());
     if p.as_os_str().is_empty() {
         return Err("path is required".into());
@@ -74,7 +74,7 @@ pub async fn memory_delete_file(
 #[tauri::command]
 pub async fn agent_config_toml_read(
 ) -> Result<crate::agent_config_view::AgentConfigTomlReadResult, String> {
-    let settings = store::load_settings();
+    let settings = store::load_settings_async().await;
     let mode = settings.session_data_mode.clone();
     tokio::task::spawn_blocking(move || crate::agent_config_view::read_agent_config_toml(&mode))
         .await
@@ -94,7 +94,7 @@ pub async fn memory_search(
     cwd: Option<String>,
     limit: Option<usize>,
 ) -> Result<crate::agent_memory::MemorySearchResult, String> {
-    let settings = store::load_settings();
+    let settings = store::load_settings_async().await;
     let path = cwd
         .as_deref()
         .map(str::trim)
@@ -1155,7 +1155,7 @@ pub async fn wallpaper_imagine(
     prompt: String,
     aspect_ratio: Option<String>,
     request_id: Option<String>,
-) -> Result<crate::wallpaper_source::WallpaperSearchResult, String> {
+) -> Result<crate::wallpaper_imagine_video::WallpaperImagineResult, String> {
     crate::wallpaper_source::ensure_wallpaper_dirs();
     let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     tauri::async_runtime::spawn_blocking(move || {
@@ -1177,7 +1177,7 @@ pub async fn wallpaper_image_to_video(
     motion_prompt: Option<String>,
     duration: Option<u32>,
     resolution_name: Option<String>,
-) -> Result<crate::wallpaper_source::WallpaperSearchResult, String> {
+) -> Result<crate::wallpaper_imagine_video::WallpaperImagineResult, String> {
     crate::wallpaper_source::ensure_wallpaper_dirs();
     tauri::async_runtime::spawn_blocking(move || {
         crate::wallpaper_imagine_video::generate(
@@ -1205,7 +1205,7 @@ pub async fn wallpaper_image_edit(
     source_png_base64: Option<String>,
     prompt: String,
     aspect_ratio: Option<String>,
-) -> Result<crate::wallpaper_source::WallpaperSearchResult, String> {
+) -> Result<crate::wallpaper_imagine_video::WallpaperImagineResult, String> {
     crate::wallpaper_source::ensure_wallpaper_dirs();
     tauri::async_runtime::spawn_blocking(move || {
         crate::wallpaper_imagine_video::edit::generate(
@@ -1218,6 +1218,31 @@ pub async fn wallpaper_image_edit(
     })
     .await
     .map_err(|e| format!("wallpaper_image_edit task failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn wallpaper_imagine_recover_catalog(
+    recovery_id: String,
+) -> Result<crate::wallpaper_imagine_video::WallpaperImagineResult, String> {
+    crate::wallpaper_source::ensure_wallpaper_dirs();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::wallpaper_imagine_video::recover_catalog(&recovery_id)
+    })
+    .await
+    .map_err(|e| format!("wallpaper_imagine_recover_catalog task failed: {e}"))
+}
+
+#[tauri::command]
+pub async fn wallpaper_imagine_pending_recoveries() -> Result<
+    Vec<crate::wallpaper_imagine_video::WallpaperImagineRecovery>,
+    String,
+> {
+    crate::wallpaper_source::ensure_wallpaper_dirs();
+    tauri::async_runtime::spawn_blocking(
+        crate::wallpaper_imagine_video::pending_catalog_recoveries,
+    )
+    .await
+    .map_err(|e| format!("wallpaper_imagine_pending_recoveries task failed: {e}"))
 }
 
 #[tauri::command]

@@ -13,19 +13,81 @@ See `docs/llm-wiki/release.md`.
 
 ## [Unreleased]
 
+### Added
+- The composer branch chip can switch git branches in the current folder. Remote-only rows create a local tracking branch; a branch already checked out in another worktree opens that worktree instead.
+- Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
+
+**中文 · 新增**
+- 输入框上的分支 chip 可在当前目录切换 git 分支。仅远程存在的分支会建本地跟踪分支；已在其他 worktree 检出的则切到那个 worktree。
+- 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
+
 ### Fixed
-- Sending with images or attachments no longer shows duplicate user bubbles. The same turn is not painted twice while the reply streams (#1119, #1124).
-- After idle reconnect, the same user turn is not painted twice (#1124). Host and optimistic rows no longer race into a duplicate.
-- Custom relays show retry progress under Thinking (#1126). A waiting hint replaces the blank “working” state.
-- Wallpaper search keeps favorites and local paths across pages (#1120). The multi-source gallery layout is restored.
-- Switching wallpaper sources no longer cancels in-flight search (#1121). ZDR privacy blocks show a clear image-to-video hint.
+- Embedded browser opens Google sign-in in a shared-cookie login window.
+- Slow trackpad scrolling up from the chat tail no longer snaps back or flashes.
+- Wallpaper frost stays stable while streaming on macOS.
+- The user menu lists every saved official account and remaining quota again.
+- Math formulas render with one matching KaTeX version again. The bundled CSS had drifted ahead of the JS.
+- Wallpaper no longer flashes black while streaming or following the chat tail.
+- Reconnect from the error banner always uses the latest connection state.
+- Imagine portrait thumbnails stay contained when the wallpaper window narrows.
+- What's New now lists every entry; some were cut off before.
+- Generated wallpaper stays visible when library indexing fails and can be saved again.
+- Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
+
+**中文 · 修复**
+- 内嵌浏览器的 Google 登录改为共享 Cookie 的登录窗，完成后回到内嵌页。
+- 从聊天底部慢慢上滑时，不再被弹回底部或闪一下。
+- 流式输出时壁纸霜化层保持稳定，不再随 stream-perf 重建。
+- 用户菜单再次列出本机已保存的官方账号及各自剩余额度。
+- 数学公式恢复 CSS 与 JS 同版本渲染，不再出现样式超前于脚本。
+- 流式输出和自动跟随聊天底部时，静态及动态壁纸不再闪黑。
+- 错误横幅上的重连始终使用最新的连接状态。
+- 壁纸窗口缩小时，Imagine 纵向缩略图不再挤压错位。
+- 「新功能」弹窗不再漏掉部分条目。
+- 生成壁纸在图库索引失败时仍会显示，并可直接重试保存。
+- 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+
+### Changed
+- Ctrl+Tab fills the selected chat row. Busy chats show the same spinner as the sidebar (#1146).
+- About shows the git short hash when the build is not an exact release tag (#1139).
+- The theme editor modal loads on demand instead of joining app startup.
+- Bundled KaTeX math fonts ship as woff2 only, trimming the install size.
+- Settings reads and writes run on the blocking pool, off the async command path.
+
+**中文 · 变更**
+- Ctrl+Tab 预选行有背景高亮。进行中的对话显示与侧栏相同的转圈（#1146）。
+- 构建不是精确的 release tag 时，About 显示 git short hash（#1139）。
+- 主题编辑器改为按需加载，不再拖累应用启动。
+- 打包内的 KaTeX 数学字体只保留 woff2 格式，安装包更小。
+- 设置的读写改走阻塞线程池，异步命令不再被设置文件锁卡住。
+
+### Improved
+- Local video details now use the file's measured dimensions and duration.
+
+**中文 · 改进**
+- 本地视频详情现在显示文件实测的尺寸与时长。
+
+## [0.2.34] - 2026-09-09
+
+> **Highlight:** Bigger wallpaper sources, stronger Windows freeze fixes, safer chat thumbs.
+>
+> **中文 · 亮点：** 壁纸来源大扩展，Windows 卡死修复更完整，聊天缩略图也挡住内网拉取。
+
+### Fixed
+- Sending with images no longer shows two identical user bubbles while streaming. Also covers attachments (#1119, #1124).
+- Idle reconnect no longer paints the same user turn twice. Host and optimistic rows no longer race (#1124).
+- Custom relays show retry progress under Thinking instead of a blank working state (#1126).
+- Wallpaper search keeps favorites and local paths across pages. Multi-source gallery layout is restored (#1120).
+- Switching wallpaper sources no longer cancels in-flight search. ZDR blocks show a clear image-to-video hint (#1121).
 - Long chats stay smoother on a Windows touchscreen. Slow pans no longer hitch while the finger is down (#1122).
 - Windows no longer freezes when stream IPC or tool journals ran under session locks.
+- Turn errors and cancels release the session lock before disk and UI work.
 - Opening a chat times out stuck history loads and keeps the cached transcript.
 - Connect retry no longer waits unbounded on a stuck claim or stop.
-- Windows agent kill reaps the full process tree so tool shells do not orphan.
+- Windows agent kill reaps the process tree without freezing while taskkill waits.
+- Chat remote image thumbs block private and loopback targets like wallpaper media.
 - One busy terminal tab no longer blocks writes or resize on other tabs.
-- Official login restores from the App agent-home mirror if `~/.grok` auth was wiped.
+- Official login and wallpaper OAuth restore from agent-home if `~/.grok` auth was wiped.
 - Windows titlebar drag moves the window again on older WebView2 (#1075).
 - Feishu remote-control setup shows the publish / availability guide (same as Lark).
 - Search no longer applies results after you close the palette (#1078).
@@ -43,18 +105,20 @@ See `docs/llm-wiki/release.md`.
 - Plugin authorization keeps secrets out of process command lines.
 
 **中文 · 修复**
-- 带图或附件发送时，流式回复过程中不再出现两条相同的用户气泡（#1119、#1124）。
-- 闲置重连后，Host 与乐观气泡竞态时不再把同一条用户消息画两次（#1124）。
-- 自定义中转在「思考中」下显示重试进度与等待提示，不再只有空白的「工作中」（#1126）。
-- 壁纸搜索分页时保留收藏与本地路径，并恢复多来源图库布局（#1120）。
-- 切换壁纸来源不再取消进行中的搜索；ZDR 隐私模式会给出明确的图生视频提示（#1121）。
+- 带图发送时不再出现两条相同的用户气泡。附件发送同样修复（#1119、#1124）。
+- 闲置重连后不再把同一条用户消息画两次。Host 与乐观气泡不再竞态（#1124）。
+- 自定义中转在「思考中」下显示重试进度，不再空白「工作中」（#1126）。
+- 壁纸搜索分页时保留收藏与本地路径。多来源图库布局已恢复（#1120）。
+- 切换壁纸来源不再取消进行中的搜索。ZDR 会给出明确的图生视频提示（#1121）。
 - 长会话在 Windows 触屏上滑动更跟手。不抬手慢滑也不再一顿一顿（#1122）。
 - Windows 上不再因会话锁内发流式事件或写工具日志而整窗卡死。
+- 回合错误与取消会先放开会话锁，再写磁盘和推界面。
 - 打开会话时历史加载会超时，并保留已有缓存内容。
 - 重连不再因卡住的连接占用或 Stop 而无限等待。
-- Windows 结束 Agent 时会清理整棵进程树，避免工具子进程残留。
+- Windows 结束 Agent 会清进程树，等待 taskkill 时不再卡住 Host。
+- 聊天远程缩略图与壁纸一样拦截内网与回环地址。
 - 一个繁忙终端标签页不再挡住其他标签页的输入或缩放。
-- 当 `~/.grok/auth.json` 被清掉时，会从 App agent-home 镜像恢复官方登录。
+- `~/.grok` 凭据被清掉时，官方登录与壁纸 OAuth 会从 agent-home 恢复。
 - Windows 标题栏在旧版 WebView2 上又能拖动窗口（#1075）。
 - 飞书远程控制显示与 Lark 相同的「发布 / 可用性」引导步骤。
 - 关掉搜索面板后，迟到的结果不再写回（#1078）。
@@ -72,8 +136,6 @@ See `docs/llm-wiki/release.md`.
 - 插件授权密钥不再出现在进程命令行中。
 
 ### Added
-- The composer branch chip can switch git branches in the current folder. Remote-only rows create a local tracking branch; a branch already checked out in another worktree opens that worktree instead.
-- Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
 - Ctrl+Tab shows a recent-chat list while you hold Ctrl. Release Ctrl to open the highlighted chat (#1125).
 - Chat markdown renders Mermaid diagrams from fenced code blocks.
 - Wallpaper X can use Responses search with a clear fallback to CLI (#1088).
@@ -86,8 +148,6 @@ See `docs/llm-wiki/release.md`.
 - Wallpaper sources can browse your Grok Saved album after a secure sign-in check (#1103).
 
 **中文 · 新增**
-- 输入框上的分支 chip 可在当前目录切换 git 分支。仅远程存在的分支会建本地跟踪分支；已在其他 worktree 检出的则切到那个 worktree。
-- 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
 - 按住 Ctrl+Tab 会弹出最近对话列表。松开 Ctrl 打开高亮的那一条（#1125）。
 - 聊天 Markdown 会渲染 fenced Mermaid 流程图。
 - 壁纸 X 可用 Responses 搜索，失败时清楚回退到 CLI（#1088）。
@@ -100,6 +160,7 @@ See `docs/llm-wiki/release.md`.
 - 壁纸来源可在安全登录校验后浏览 Grok Saved 相册（#1103）。
 
 ### Changed
+- Left sidebar toggle on Windows snaps instead of sliding the chat column. Opening it skips growing a window that already fits.
 - Finished Worked-for rails fold after the turn. Failed tools stay as one-line excerpts.
 - Sent quotes show the excerpt and comment in the bubble, not a notes chip.
 - Account quota sits in the user menu again, with remaining % beside the name.
@@ -109,6 +170,7 @@ See `docs/llm-wiki/release.md`.
 - Startup skips TipTap and markdown preloads; Office and Settings load on demand (#1055, #1063).
 
 **中文 · 变更**
+- Windows 上开关左侧栏不再把聊天列跟着宽度滑动。窗口已经够宽时展开也不再拉大窗口。
 - 结束后的「Worked for」工具栏会收起。失败步骤保留为一行摘要。
 - 发送后的引用在气泡里直接显示摘录和评论，不再收成「N 条注释」。
 - 额度卡片回到用户菜单顶部，名字旁显示剩余百分比。
@@ -116,12 +178,6 @@ See `docs/llm-wiki/release.md`.
 - 默认工作区在侧栏和输入框改用小房子图标（#1069）。
 - 侧栏「其他会话」与输入框统一为「默认工作区」（#1067）。
 - 启动不再预载 TipTap / markdown；Office 与设置页按需加载（#1055、#1063）。
-
-### Fixed
-- Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
-
-**中文 · 修复**
-- 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
 
 ## [0.2.33] - 2026-09-06
 

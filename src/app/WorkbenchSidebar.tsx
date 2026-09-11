@@ -3,6 +3,8 @@
  * Open/new-chat and settings navigation stay with the host.
  */
 import {
+  lazy,
+  Suspense,
   useEffect,
   useState,
   type CSSProperties,
@@ -13,7 +15,6 @@ import {
 import { Tip } from "@/components/ui/tooltip";
 import { SidebarBrand } from "@/components/SidebarBrand";
 import { SidebarUpdateButton } from "@/components/SidebarUpdateButton";
-import { ThemeEditorModal } from "@/components/ThemeEditorModal";
 import { UserMenu } from "@/components/UserMenu";
 import { GrokLogo } from "@/components/GrokLogo";
 import {
@@ -63,6 +64,13 @@ import type { Theme, ThemePreference } from "@/lib/theme";
 import { requestWhatsNewOpen } from "@/lib/whatsNew";
 
 type TFn = ReturnType<typeof createT>;
+
+// Theme editor (appearance settings model, ~300KB) only loads when opened
+// from the sidebar rail, keeping it off the boot-critical App chunk.
+const ThemeEditorModal = lazy(async () => {
+  const m = await import("@/components/ThemeEditorModal");
+  return { default: m.ThemeEditorModal };
+});
 
 function quotaBarFillClass(usedPercent: number | null): string {
   if (usedPercent != null && usedPercent >= 90) return " is-danger";
@@ -182,13 +190,16 @@ export function WorkbenchSidebar(props: WorkbenchSidebarProps) {
     loadProviderBalance,
     applyThemeChoice,
     onSettings,
+    onAccountSettings,
     onTutorial,
     onLogin,
     onLogout,
+    savedAccounts,
+    activeAccountId,
+    accountQuotas,
+    onSwitchAccount,
     onUserMenuOpened,
   } = props;
-  // Account deep-link stays on Settings gear / Account section (no footer pin).
-  void props.onAccountSettings;
 
   const providerSupportsBalance =
     !!activeCustomProvider &&
@@ -416,6 +427,7 @@ export function WorkbenchSidebar(props: WorkbenchSidebarProps) {
               closeImmediately={closeImmediately}
               theme={theme}
               themePreference={themePreference}
+              locale={locale}
               account={account}
               activeProvider={activeCustomProvider}
               accountBusy={accountBusy}
@@ -445,6 +457,11 @@ export function WorkbenchSidebar(props: WorkbenchSidebarProps) {
                     }
                   : null
               }
+              savedAccounts={savedAccounts}
+              activeAccountId={activeAccountId}
+              accountQuotas={accountQuotas}
+              onSwitchAccount={onSwitchAccount}
+              onAccountSettings={onAccountSettings}
               labels={{
                 whatsNew: tr("whatsNew.menu"),
                 tutorial: tr("tutorial.menu"),
@@ -455,6 +472,10 @@ export function WorkbenchSidebar(props: WorkbenchSidebarProps) {
                 themeEditor: tr("user.themeEditor"),
                 login: tr("account.login"),
                 logout: tr("account.logout"),
+                remaining: tr("account.quotaRemaining"),
+                profileActive: tr("account.profileActive"),
+                switchTo: tr("account.switchTo"),
+                resetsAt: tr("account.resetsAt"),
               }}
               onWhatsNew={() => requestWhatsNewOpen()}
               onTutorial={onTutorial}
@@ -559,11 +580,13 @@ export function WorkbenchSidebar(props: WorkbenchSidebarProps) {
         </div>
       </div>
       {themeEditorOpen ? (
-        <ThemeEditorModal
-          open
-          onClose={() => setThemeEditorOpen(false)}
-          locale={locale}
-        />
+        <Suspense fallback={null}>
+          <ThemeEditorModal
+            open
+            onClose={() => setThemeEditorOpen(false)}
+            locale={locale}
+          />
+        </Suspense>
       ) : null}
     </aside>
   );
