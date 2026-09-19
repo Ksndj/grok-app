@@ -4,7 +4,6 @@
 //! Billing is best-effort HTTP (same field shape as CLI `/usage` / billing extension).
 //! Heatmap + call logs are derived from local CLI session signals (and optional app journal).
 
-#![allow(dead_code)] // residual-clippy: billing helpers not yet wired in UI path
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -36,6 +35,7 @@ pub(crate) use build_oauth::{
 pub struct LoginProcState {
     cancel: tokio::sync::Notify,
     /// Guard: only one login may run at a time.
+    #[allow(dead_code)]
     busy: tokio::sync::Mutex<bool>,
     /// Live child stdin while `account_login` is in flight (for paste-back codes).
     stdin: tokio::sync::Mutex<Option<tokio::process::ChildStdin>>,
@@ -103,6 +103,7 @@ pub async fn account_login_submit_code(code: &str) -> Result<(), String> {
 }
 use crate::store;
 
+#[allow(dead_code)]
 const BILLING_CANDIDATES: &[&str] = &[
     // Confirmed live endpoint used by Grok Build CLI billing extension.
     "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
@@ -333,6 +334,35 @@ pub fn clear_agent_home_auth() {
     if p.is_file() {
         let _ = fs::remove_file(&p);
         info!("account: cleared agent-home auth.json");
+    }
+}
+
+fn official_aux_auth_json_path() -> PathBuf {
+    crate::official_aux::official_aux_home().join("auth.json")
+}
+
+/// Local credential files Sign out must delete even when `grok logout` exits 0
+/// without wiping them (expired OIDC, #1213).
+fn logout_auth_paths() -> Vec<PathBuf> {
+    let mut out = vec![
+        auth_json_path(),
+        cli_default_auth_json_path(),
+        agent_home_auth_json_path(),
+        official_aux_auth_json_path(),
+    ];
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn wipe_local_auth_files() {
+    for p in logout_auth_paths() {
+        if p.is_file() {
+            match fs::remove_file(&p) {
+                Ok(()) => info!("account: wiped {}", p.display()),
+                Err(e) => warn!("account: failed to wipe {}: {e}", p.display()),
+            }
+        }
     }
 }
 
@@ -686,6 +716,7 @@ fn save_billing_cache(b: &BillingSnapshot) {
 }
 
 /// Parse number or `{ "val": N }` money wrappers used by cli-chat-proxy billing.
+#[allow(dead_code)]
 fn json_number(v: Option<&Value>) -> Option<f64> {
     let v = v?;
     if let Some(n) = v.as_f64() {
@@ -709,6 +740,7 @@ fn json_number(v: Option<&Value>) -> Option<f64> {
     None
 }
 
+#[allow(dead_code)]
 fn parse_billing_json(v: &Value) -> BillingSnapshot {
     // Nested under data / credits / config (cli-chat-proxy uses `config`).
     let root = if v.get("creditUsagePercent").is_some() || v.get("monthlyLimit").is_some() {
@@ -1059,6 +1091,7 @@ async fn fetch_subscription_meta(token: &str) -> SubscriptionMeta {
     meta
 }
 
+#[allow(dead_code)]
 async fn fetch_billing_remote(token: &str) -> BillingSnapshot {
     let client = match crate::proxy::apply_to_reqwest(reqwest::Client::builder())
         .timeout(Duration::from_secs(10))
@@ -1981,23 +2014,18 @@ pub async fn account_logout(manual_cli: Option<&str>) -> Result<AccountProfile, 
                 info!("account: grok logout ok");
             }
             Ok(st) => {
-                warn!("account: grok logout exit {st}; clearing auth.json fallback");
-                let _ = fs::remove_file(auth_json_path());
-                let _ = fs::remove_file(cli_default_auth_json_path());
+                warn!("account: grok logout exit {st}; wiping local auth anyway");
             }
             Err(e) => {
-                warn!("account: grok logout spawn failed: {e}");
-                let _ = fs::remove_file(auth_json_path());
-                let _ = fs::remove_file(cli_default_auth_json_path());
+                warn!("account: grok logout spawn failed: {e}; wiping local auth anyway");
             }
         }
     } else {
-        // No CLI — best-effort wipe of local CLI auth cache only.
-        let _ = fs::remove_file(auth_json_path());
-        let _ = fs::remove_file(cli_default_auth_json_path());
+        info!("account: no CLI on logout; wiping local auth files");
     }
-    // Always drop independent-mode copy so agent cannot keep using old tokens.
-    clear_agent_home_auth();
+    // Always wipe: `grok logout` can exit 0 while leaving expired `auth.json`
+    // (and official-aux / agent-home copies) in place (#1213).
+    wipe_local_auth_files();
 
     Ok(read_auth_profile())
 }
@@ -2011,6 +2039,7 @@ pub async fn open_subscribe() -> Result<(), String> {
 }
 
 /// Open a URL in the system browser (also used after device-code login).
+#[allow(dead_code)]
 pub fn open_browser_url(url: &str) -> Result<(), String> {
     open_url(url)
 }
@@ -2022,6 +2051,31 @@ fn open_url(url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logout_auth_paths_cover_cli_agent_home_and_official_aux() {
+        let paths = logout_auth_paths();
+        let joined: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert!(
+            joined
+                .iter()
+                .any(|p| p.ends_with("/.grok/auth.json") || p.ends_with("auth.json")),
+            "{joined:?}"
+        );
+        assert!(
+            joined.iter().any(|p| p.contains("agent-home-official")),
+            "missing official-aux auth: {joined:?}"
+        );
+        assert!(
+            joined
+                .iter()
+                .any(|p| p.contains("agent-home") && !p.contains("agent-home-official")),
+            "missing agent-home auth: {joined:?}"
+        );
+    }
 
     #[test]
     fn parse_billing_accepts_cli_shape() {

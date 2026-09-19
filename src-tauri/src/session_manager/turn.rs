@@ -49,6 +49,7 @@ impl SessionManager {
         // those lines via parseAttachmentsFromContent for the bubble body).
         let journal_attachments = attachments.filter(|items| !items.is_empty());
         if let Some(ref atts) = journal_attachments {
+            grant_journal_attachment_paths(atts);
             journal_content = append_journal_attachment_refs(journal_content, atts);
         }
         // Note: image @path stripping + Host vision runs on the *final*
@@ -210,6 +211,14 @@ impl SessionManager {
                 s.saw_model_output = false;
                 return Err(format!("JOURNAL_WRITE_FAILED: {e}"));
             }
+            // Sidebar recency: last activity, not last click. Pin stays organizational.
+            s.meta.updated_at = user_row.created_at;
+            if let Err(e) = store::update_session_meta(&s.meta) {
+                tracing::warn!(
+                    session = %s.app_session_id,
+                    "turn-start session metadata update failed after user journal: {e}"
+                );
+            }
             Ok((
                 s.backend.clone(),
                 s.app_session_id.clone(),
@@ -262,6 +271,7 @@ impl SessionManager {
                 "streamMessageId": message_id,
             }),
         );
+        crate::mirror::notify_sessions_changed(Some(&app), "turn", &app_sid);
 
         // ── Host vision (custom text-only main + @image only) ──────────────
         // Official Grok route: never Host-describe (native multimodal).
@@ -691,6 +701,7 @@ impl SessionManager {
             .unwrap_or_else(|| text.clone());
         let attachments = attachments.filter(|items| !items.is_empty());
         if let Some(ref atts) = attachments {
+            grant_journal_attachment_paths(atts);
             journal_content = append_journal_attachment_refs(journal_content, atts);
         }
         let target = session_id.as_deref();

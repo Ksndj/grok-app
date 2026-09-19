@@ -62,6 +62,10 @@ export interface AppSettings {
    * Default "off". Passed as `grok --sandbox <profile>` / GROK_SANDBOX on spawn.
    */
   sandboxProfile?: string;
+  /** Show multi-root workspace UI (#1194). Default true. */
+  multiRootWorkspaceEnabled?: boolean;
+  /** Last workspace id hint for new chats. */
+  recentWorkspaceId?: string | null;
 
   maxAgentTurns?: number | null;
   /**
@@ -177,6 +181,8 @@ export interface AppSettings {
   lastProjectId?: string | null;
   /** Sidebar project folder ids the user collapsed (missing ⇒ expanded). */
   sidebarCollapsedProjectIds?: string[];
+  /** One-shot crowded-tree auto-collapse (#1230). After true, empty = expand all. */
+  sidebarCollapseDefaultMigrated?: boolean;
   /**
    * Sidebar Default workspace section expanded. Default true (open).
    * Missing / undefined ⇒ open (legacy installs before this pref).
@@ -324,7 +330,7 @@ export async function composerPrefsSet(body: {
 }
 
 export async function settingsSet(settings: Record<string, unknown>) {
-  return invoke("settings_set", { settings });
+  return invoke<AppSettings>("settings_set", { settings });
 }
 
 /** Update live Host permission policy + persist at configured prefs scope. */

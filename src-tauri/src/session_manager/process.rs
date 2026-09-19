@@ -1,6 +1,5 @@
 //! Process capacity, park/unpark, idle recycle, snapshots.
 
-#![allow(dead_code)] // residual-clippy: snapshot_from_parked
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -263,6 +262,46 @@ impl SessionManager {
     pub fn session_turn_busy(&self, app_session_id: &str) -> bool {
         self.with_session_mut(app_session_id, |s| Self::live_session_is_busy(s))
             .unwrap_or(false)
+    }
+
+    /// True when any live or background mid-turn session is bound to `project_id`
+    /// or has a worktree path under `project_path` (git switch safety).
+    pub fn any_busy_turn_for_project(
+        &self,
+        project_id: Option<&str>,
+        project_path: &str,
+    ) -> Option<String> {
+        let norm = |s: &str| s.trim().trim_end_matches(['/', '\\']).replace('\\', "/");
+        let target = norm(project_path);
+        let matches = |s: &LiveSession| {
+            if !Self::live_session_is_busy(s) {
+                return false;
+            }
+            if let (Some(want), Some(have)) = (project_id, s.meta.project_id.as_deref()) {
+                if want == have {
+                    return true;
+                }
+            }
+            if let Some(wp) = s.meta.worktree_path.as_deref() {
+                let n = norm(wp);
+                if n == target || n.starts_with(&(target.clone() + "/")) {
+                    return true;
+                }
+            }
+            false
+        };
+        {
+            let guard = self.inner.lock();
+            if let Some(s) = guard.as_ref() {
+                if matches(s) {
+                    return Some(s.app_session_id.clone());
+                }
+            }
+        }
+        let bg = self.background.lock();
+        bg.values()
+            .find(|s| matches(s))
+            .map(|s| s.app_session_id.clone())
     }
 
     pub(super) fn live_session_is_busy(s: &LiveSession) -> bool {
@@ -1434,6 +1473,7 @@ impl SessionManager {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn snapshot_from_parked(p: &ParkedAgent) -> SessionSnapshot {
         SessionSnapshot {
             session_id: Some(p.app_session_id.clone()),

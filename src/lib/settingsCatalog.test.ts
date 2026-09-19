@@ -173,6 +173,8 @@ describe("settingsCatalog", () => {
       "plugins",
       "mcp",
       "skills",
+      "rules",
+      "commands",
       "agents",
       "hooks",
     ]);
@@ -323,9 +325,11 @@ describe("settingsCatalog", () => {
     expect(appearance).toContain("settings.skin");
     expect(appearance).toContain("settings.themeSchedule");
     expect(appearance).toContain("settings.wallpaper");
+    expect(appearance).toContain("settings.wallpaperColor");
     expect(appearance).toContain("settings.thinkingExpand");
     expect(appearance).toContain("settings.toolStepsAutoCollapse");
     expect(appearance).toContain("settings.chatVirtualScroll");
+    expect(appearance).toContain("settings.filePathCardLabel");
     expect(appearance).toContain("settings.transcriptFilter");
     expect(appearance).toContain("settings.chatFontScale");
     expect(appearance).toContain("settings.codeFontScale");
@@ -573,6 +577,14 @@ describe("settingsCatalog", () => {
     const scrollOptZh = searchSettingsEntries("滚动优化", tZh, tEn);
     expect(
       scrollOptZh.some((h) => h.entry.id === "appearance.chatVirtualScroll"),
+    ).toBe(true);
+    const filePathCard = searchSettingsEntries("file name only", tZh, tEn);
+    expect(
+      filePathCard.some((h) => h.entry.id === "appearance.filePathCardLabel"),
+    ).toBe(true);
+    const filePathCardZh = searchSettingsEntries("只显示文件名", tZh, tEn);
+    expect(
+      filePathCardZh.some((h) => h.entry.id === "appearance.filePathCardLabel"),
     ).toBe(true);
     const transcriptFilter = searchSettingsEntries("transcript filter", tZh, tEn);
     expect(

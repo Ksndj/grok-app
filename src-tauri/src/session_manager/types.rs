@@ -1751,6 +1751,46 @@ fn urlencoding_soft_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Same gate as FE `isSoleLineAtAttachmentPath` / cli_sessions helper.
+fn is_sole_line_at_attachment_path_ref(path: &str) -> bool {
+    let p = path.trim();
+    if p.is_empty() {
+        return false;
+    }
+    let b = p.as_bytes();
+    let windows_abs = b.len() >= 3
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && (b[2] == b'\\' || b[2] == b'/');
+    if windows_abs {
+        let rest = p[2..].trim_start_matches(['/', '\\']).replace('\\', "/");
+        return rest.split('/').filter(|s| !s.is_empty()).count() >= 1;
+    }
+    if !p.starts_with('/') || p.starts_with("//") {
+        return false;
+    }
+    p.split('/').filter(|s| !s.is_empty()).count() >= 2
+}
+
+/// Grant path_scope for user-attached local files so chat thumbs / media HTTP
+/// can preview Desktop / Documents / Pictures paths without waiting on a later
+/// `paths_classify` race (Windows `@C:\…\shot.png` cards).
+pub(super) fn grant_journal_attachment_paths(atts: &[MessageAttachmentStored]) {
+    for att in atts {
+        let p = att.path.trim();
+        if p.is_empty() || p.starts_with("http://") || p.starts_with("https://") {
+            continue;
+        }
+        if att.is_dir {
+            continue;
+        }
+        let pb = std::path::Path::new(p);
+        if pb.is_file() {
+            crate::path_scope::grant_path(pb);
+        }
+    }
+}
+
 /// Append sole-line `@/abs/path` refs for journal dual-write (idempotent).
 ///
 /// Preserves **internal** blank lines in the user body. Only a trailing run of
@@ -1767,12 +1807,14 @@ pub(super) fn append_journal_attachment_refs(
     let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
 
     // Peel existing trailing sole-line @path refs so we can re-merge idempotently.
+    // Only peel plausible multi-segment absolutes (same gate as FE / cli_sessions
+    // `is_sole_line_at_attachment_path`) so `@/goal …` prose stays in the body.
     let mut prior_refs: Vec<String> = Vec::new();
     while let Some(last) = lines.last() {
         let t = last.trim();
         if let Some(rest) = t.strip_prefix('@') {
             let path = rest.trim();
-            if !path.is_empty() {
+            if is_sole_line_at_attachment_path_ref(path) {
                 prior_refs.push(lines.pop().unwrap());
                 continue;
             }
@@ -1985,6 +2027,15 @@ mod journal_attach_tests {
         let once = append_journal_attachment_refs("hello\n\nworld".into(), &[att("/tmp/a.txt")]);
         let twice = append_journal_attachment_refs(once.clone(), &[att("/tmp/a.txt")]);
         assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn append_does_not_peel_at_goal_prose() {
+        let out = append_journal_attachment_refs(
+            "body\n\n@/goal keep me".into(),
+            &[att("/tmp/shot.png")],
+        );
+        assert_eq!(out, "body\n\n@/goal keep me\n\n@/tmp/shot.png");
     }
 }
 
