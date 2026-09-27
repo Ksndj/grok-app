@@ -25,6 +25,46 @@ See `docs/llm-wiki/release.md`.
 **中文 · 修复**
 - 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
 
+## [0.2.37] - 2026-09-22
+
+> **Highlight:** New chats can use Grok 4.7, and the live reply stays pinned.
+>
+> **中文 · 亮点：** 新对话可用 Grok 4.7，生成中的回复会继续贴底。
+
+### Added
+- Composer lists Grok 4.7 and Grok 4.7 Fast. New chats start on 4.7 once the CLI lists it. Fast costs twice the token price.
+
+**中文 · 新增**
+- 模型菜单可选 Grok 4.7 和 Grok 4.7 Fast。CLI 列出 4.7 后，新对话默认用它。Fast 的 token 价格是两倍。
+
+### Changed
+- README explains antivirus false positives on unsigned Windows builds.
+
+**中文 · 变更**
+- README 说明未签名的 Windows 包可能被杀毒软件误报。
+
+### Fixed
+- New chats keep the project's extra folders.
+- Removing extra folders from a chat stays removed after reconnect.
+- Deleting a chat also removes its CLI session, so Import cannot bring it back.
+- Archive explains it only hides the chat in the app sidebar.
+- Approve-for-me remembers a tool for the rest of the session.
+- Math formulas render again, including one-line bracket formulas.
+- Scrolling to the latest message on macOS stays there.
+- Thinking collapse keeps following the latest reply.
+- A broken stored message no longer blanks the whole chat.
+
+**中文 · 修复**
+- 同一项目的新对话会带上已添加的附加文件夹。
+- 从本场对话移除附加文件夹后，重连不会再加回去。
+- 删除对话也会删掉对应的 CLI 会话，导入不会再把它找回来。
+- 归档会说明只是在应用侧栏里隐藏这场对话。
+- 「替我审批」会记住本场对话已允许的工具。
+- 数学公式会再渲染，包括单独一行的方括号公式。
+- 在 Mac 上滚到最新消息后会停在那里。
+- 思考块折叠后，对话仍会跟着最新回复。
+- 某条已保存消息异常时，不再把整场对话打成空白。
+
 ## [0.2.36] - 2026-09-17
 
 > **Highlight:** Pin chats globally, copy commands and diffs, and keep Shared session data.

@@ -60,7 +60,7 @@
 
 ## ✨ 核心亮点
 
-- ⚡ **原生 Build 会话** — 通过 ACP 协议直接托管 `grok agent stdio`，支持 Ask（默认确认）、单次允许、本会话允许与 YOLO（完全自主）权限分级，默认启用 Grok 4.6 极高推理（`xhigh`）。
+- ⚡ **原生 Build 会话** — 通过 ACP 协议直接托管 `grok agent stdio`，支持 Ask（默认确认）、单次允许、本会话允许与 YOLO（完全自主）权限分级，默认启用 Grok 4.7 极高推理（`xhigh`），也可选 Grok 4.7 Fast。
 - 🗂️ **多项目工作台** — 独立项目空间、智能体看板、Git 工作树（Worktree）一键无缝切换、从任意助手回复分叉（Fork）会话、将历史对话作为上下文一键引用。
 - 📝 **文件与创作闭环** — 内置 CodeMirror 代码与文本编辑器（支持实时保存与磁盘双向同步）、Git Diff 变更对比、图片/音视频/PDF/Office 丰富媒体预览，以及 Imagine 图像与视频生成。
 - 📲 **全渠道远程 IM 连接** — 内置远程控制桥接，支持飞书 (Lark)、Telegram、Discord、Slack、钉钉、企业微信、微信个人、QQ、Matrix、LINE 与微博；支持手机 Web 镜像及本地 REST API。
@@ -182,6 +182,8 @@ open /Applications/Grok.app
 
 ### Windows SmartScreen 提示未知发布者
 在运行未签名的社区版本时，Windows SmartScreen 可能会弹出提示。点击 **更多信息 → 仍要运行** 即可。建议通过 `SHA256SUMS` 校验下载包的哈希值。
+
+卡巴斯基等第三方杀毒也可能把未签名的 Tauri 应用和随包 CLI 标成启发式威胁，这是社区构建的误报。请先核对安装包哈希，再把安装目录和应用数据目录（常见在 `%LOCALAPPDATA%`）加入排除项。根治需要 Windows 代码签名；应用无法在杀毒软件里给自己开白名单。
 
 ---
 
@@ -314,7 +316,7 @@ Windows（可选）：双击 [`install-latest.cmd`](./install-latest.cmd) 会把
 ## 👥 贡献者
 
 <!-- CONTRIBUTORS:START -->
-感谢所有为 Grok App 做出贡献的人！以下为 GitHub 仓库全部人类贡献者（按 commits 降序，2026-09-17 更新）。
+感谢所有为 Grok App 做出贡献的人！以下为 GitHub 仓库全部人类贡献者（按 commits 降序，2026-09-22 更新）。
 
 <p align="center">
   <a href="https://github.com/RongleCat" title="RongleCat"><img src="https://github.com/RongleCat.png?size=96" width="72" height="72" alt="RongleCat" style="border-radius:50%" /></a>

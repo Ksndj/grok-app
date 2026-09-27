@@ -5082,7 +5082,7 @@ export function AppWorkbench() {
         ? tr("sidebar.archiveSelectedTitle")
         : tr("sidebar.restoreSelectedTitle"),
       message: archived
-        ? tr("sidebar.archiveSelectedConfirm", { n: String(n) })
+        ? `${tr("sidebar.archiveSelectedConfirm", { n: String(n) })}\n\n${tr("sidebar.archiveCliHint")}`
         : tr("sidebar.restoreSelectedConfirm", { n: String(n) }),
       confirmLabel: archived
         ? tr("sidebar.archiveSelected", { n: String(n) })
@@ -9303,7 +9303,7 @@ export function AppWorkbench() {
 
   /**
    * Active effort catalog for the composer: custom channel efforts, else the
-   * selected official model (grok-4.6 is 4-tier with xhigh).
+   * selected official model (Grok 4.7 / Fast / 4.6 are 4-tier with xhigh).
    */
   const officialEffortCatalog = useMemo(
     () =>

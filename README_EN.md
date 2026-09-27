@@ -60,7 +60,7 @@
 
 ## ✨ Key Highlights
 
-- ⚡ **Native Build Sessions** — Deep integration with `grok agent stdio` via the ACP protocol. Granular permission tiers (Ask, Allow Once, Allow for Session, and YOLO mode) with Grok 4.6 Extra High (`xhigh`) enabled by default.
+- ⚡ **Native Build Sessions** — Deep integration with `grok agent stdio` via the ACP protocol. Granular permission tiers (Ask, Allow Once, Allow for Session, and YOLO mode) with Grok 4.7 Extra High (`xhigh`) enabled by default. Grok 4.7 Fast is also selectable.
 - 🗂️ **Multi-Project Workbench** — Isolated project workspaces, agent status Kanban, one-click Git Worktree switching, session forking from any assistant reply, and cross-session context attachment.
 - 📝 **Files & Creation Loop** — Embedded CodeMirror 6 editor with instant disk synchronization, visual Git Diff review, comprehensive media preview (images, video, audio, PDF, Office documents), and AI image/video generation via Imagine.
 - 📲 **Omnichannel Remote IM** — Unified bridge connecting your local agent to Feishu/Lark, Telegram, Discord, Slack, DingTalk, WeCom, WeChat personal, QQ, Matrix, LINE, and Weibo; token-gated mobile web mirror and loopback REST session API.
@@ -182,6 +182,8 @@ open /Applications/Grok.app
 
 ### Windows SmartScreen Notice
 For unsigned community packages, Windows SmartScreen may display a warning on initial launch. Click **More info → Run anyway**. You can verify the file hash against `SHA256SUMS` for integrity.
+
+Third-party antivirus (Kaspersky and similar) may also flag the unsigned Tauri app and bundled CLI as a heuristic threat. That is a false positive on community builds. Verify the installer hash, then exclude the install folder and the app data directory (often under `%LOCALAPPDATA%`). Signing with Authenticode is the long-term fix; the app cannot whitelist itself inside the antivirus.
 
 ---
 
@@ -314,7 +316,7 @@ Contributions, bug reports, and suggestions are warmly welcomed!
 ## 👥 Contributors
 
 <!-- CONTRIBUTORS:START -->
-Thanks to everyone who has contributed to Grok App. All human GitHub contributors (by commit count, updated 2026-09-17).
+Thanks to everyone who has contributed to Grok App. All human GitHub contributors (by commit count, updated 2026-09-22).
 
 <p align="center">
   <a href="https://github.com/RongleCat" title="RongleCat"><img src="https://github.com/RongleCat.png?size=96" width="72" height="72" alt="RongleCat" style="border-radius:50%" /></a>
