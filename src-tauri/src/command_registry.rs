@@ -28,6 +28,7 @@ pub fn app_invoke_handler(
         session_api::session_api_reveal_cli_link,
         commands::session_interject,
         commands::session_stop,
+        commands::session_stop_report,
         commands::session_disconnect,
         commands::session_reattach,
         commands::session_resolve_permission,
@@ -166,6 +167,8 @@ pub fn app_invoke_handler(
         commands::codebase_indexing_set,
         // ── Session model, rewind & fork ──
         commands::session_set_model,
+        commands::session_set_context_window,
+        commands::session_context_info,
         commands::session_rewind_drop_last_user,
         commands::session_rewind_points,
         commands::session_rewind_execute,

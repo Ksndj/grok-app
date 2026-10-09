@@ -251,6 +251,11 @@ export interface AppSettings {
    * Applied on write/rotate and explicit prune. Default 0.
    */
   auditLedgerRetentionDays?: number;
+  /**
+   * Composer 输入框使用的编辑器：`legacy`（内置，默认）| `tiptap`（Markdown 编辑器，实验性）。
+   * 缺省即 `legacy`，读取处按缺省处理，不做一次性迁移。
+   */
+  composerEditor?: string;
 }
 
 export interface ReasoningEffort {
@@ -270,6 +275,8 @@ export interface AvailableModel {
   reasoningEfforts?: ReasoningEffort[];
   /** Model context window in tokens (live-merged from `initialize` first). */
   contextWindow?: number | null;
+  /** Selectable windows from CLI `info.context_windows` (catalog order). */
+  contextWindows?: number[] | null;
 }
 
 export interface AvailableModelsResult {
@@ -286,6 +293,8 @@ export interface ComposerPrefs {
   permissionPolicy: string;
   scope: string;
   source: string;
+  /** `official` or a custom provider id. Missing on older chats. */
+  providerId?: string | null;
 }
 
 export async function settingsGet() {
@@ -318,6 +327,8 @@ export async function composerPrefsSet(body: {
   effort?: string | null;
   mode?: string | null;
   permissionPolicy?: string | null;
+  /** `official` or a custom section id. Omitted leaves the stored provider. */
+  providerId?: string | null;
 }) {
   return invoke<ComposerPrefs>("composer_prefs_set", {
     projectId: body.projectId ?? null,
@@ -326,6 +337,7 @@ export async function composerPrefsSet(body: {
     effort: body.effort ?? null,
     mode: body.mode ?? null,
     permissionPolicy: body.permissionPolicy ?? null,
+    providerId: body.providerId ?? null,
   });
 }
 
@@ -356,6 +368,29 @@ export async function sessionSetModel(
     modelId,
     projectId: opts?.projectId ?? null,
     sessionId: opts?.sessionId ?? null,
+  });
+}
+
+/**
+ * Set the live session's context window (`session/set_model` `_meta.contextWindow`).
+ * Does not change the stored model or reasoning effort. Official routes only.
+ */
+export async function sessionSetContextWindow(
+  tokens: number,
+  opts?: { sessionId?: string | null },
+) {
+  if (!isTauri()) return;
+  return invoke<void>("session_set_context_window", {
+    tokens,
+    sessionId: opts?.sessionId ?? null,
+  });
+}
+
+/** Live `x.ai/session/info` payload for `/context`. */
+export async function sessionContextInfo(sessionId?: string | null) {
+  if (!isTauri()) return null;
+  return invoke<unknown>("session_context_info", {
+    sessionId: sessionId ?? null,
   });
 }
 

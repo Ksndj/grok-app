@@ -788,6 +788,7 @@ impl SessionManager {
                     };
                     if Self::should_drop_plan_event(
                         s.prompt_in_flight,
+                        s.deferred_prompt_complete.is_some(),
                         s.pending_plan_rpc_id.is_some(),
                         rpc_id.is_some(),
                     ) {
@@ -878,7 +879,7 @@ impl SessionManager {
                 let abort = {
                     let mut bg = self.background.lock();
                     if let Some(s) = bg.get_mut(app_session_id) {
-                        s.provider_retry_attempt = attempt;
+                        Self::note_provider_retry(s, attempt, &reason);
                         if !Self::should_apply_provider_retry_abort(s) || s.provider_retry_aborted {
                             false
                         } else {

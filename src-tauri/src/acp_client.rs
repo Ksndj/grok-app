@@ -378,17 +378,24 @@ pub struct AcpClient {
     /// provider section id; that mis-labeled processes as "official" and
     /// let them be reused after auth.json was cleared → #528 re-login).
     custom_route: bool,
+    /// `official` or the custom section id this process was spawned for.
+    route_provider_id: String,
     /// Agent `initialize` advertisement for rewind RPCs.
     /// `None` = unknown (try RPC); `Some(false)` = skip; `Some(true)` = call.
     rewind_supported: ParkingMutex<Option<bool>>,
     /// OpenSSH alias this process was spawned with. Remote cwd is not local.
     ssh_alias: Option<String>,
+    /// Private `GROK_HOME` sealed for this process (#1293). `None` for
+    /// `~/.grok`, official-aux, SSH, and TCP. Discarded in `kill`.
+    proc_home: std::sync::Mutex<Option<PathBuf>>,
 }
 
 /// Options applied at agent process start (CLI flags).
 #[derive(Debug, Clone, Default)]
 pub struct SpawnOptions {
     pub model_id: Option<String>,
+    /// `official` or a custom section id. `None` follows the global route.
+    pub route_provider_id: Option<String>,
     pub effort: Option<String>,
     /// App permission policy id (ask / accept_edits / …).
     pub permission_policy: Option<String>,
@@ -580,13 +587,33 @@ impl AcpClient {
         // aux override home is always OIDC-side; main home follows active_route.
         // Custom relays live only in agent-home — force that GROK_HOME even when
         // session_data_mode=shared so third-party keys work without official login (#557).
+        let explicit_route = opts
+            .route_provider_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
         let custom_route = if home_override.is_some() {
             false
+        } else if let Some(ref id) = explicit_route {
+            !crate::providers::is_session_provider_official(id)
         } else {
             matches!(
                 crate::providers::active_route(),
                 crate::providers::ActiveRoute::Custom { .. }
             )
+        };
+        let route_provider_id = match explicit_route {
+            Some(id) if crate::providers::is_session_provider_official(&id) => {
+                crate::providers::SESSION_PROVIDER_OFFICIAL.to_string()
+            }
+            Some(id) => id,
+            None => match crate::providers::active_route() {
+                crate::providers::ActiveRoute::Custom { id } => id,
+                crate::providers::ActiveRoute::Official => {
+                    crate::providers::SESSION_PROVIDER_OFFICIAL.to_string()
+                }
+            },
         };
         let grok_home = if let Some(ref h) = home_override {
             h.clone()
@@ -606,9 +633,12 @@ impl AcpClient {
         } else {
             session_data_mode
         };
+        // Hold across canonical auth/config writes and the private GROK_HOME
+        // snapshot. The child and its nested tools read the snapshot, so the
+        // lock does not have to outlive spawn (#1293).
+        let route_auth_guard = crate::providers::route_auth_lock().lock().await;
         if agent_home_prep {
-            // Official → sync OIDC; custom → strip auth.json (api_key only).
-            crate::providers::prepare_route_auth_for_agent();
+            crate::providers::prepare_route_auth(custom_route);
             if let Some(ref pol) = opts.permission_policy {
                 let _ = crate::agent_prefs::sync_permission_to_agent_profile(prep_mode, pol);
             }
@@ -619,6 +649,14 @@ impl AcpClient {
         // Override home (official aux): pass model id through as catalog id.
         let grok_build_proxy = if ssh_alias.is_some() || home_override.is_some() {
             None
+        } else if opts.route_provider_id.is_some() {
+            // This chat's provider only. A global proxy default must not attach
+            // to an official chat, and a proxy section must still bind when it
+            // is not `[models].default`.
+            crate::providers::session_grok_build_proxy_spawn(
+                &route_provider_id,
+                opts.model_id.as_deref().unwrap_or(""),
+            )
         } else {
             crate::providers::active_grok_build_proxy_spawn(opts.model_id.as_deref().unwrap_or(""))
         };
@@ -635,6 +673,13 @@ impl AcpClient {
             let m = opts.model_id.as_deref().unwrap_or("").trim();
             if m.is_empty() {
                 crate::providers::OFFICIAL_CATALOG_MODEL.to_string()
+            } else {
+                m.to_string()
+            }
+        } else if opts.route_provider_id.is_some() {
+            let m = opts.model_id.as_deref().unwrap_or("").trim();
+            if m.is_empty() || custom_route {
+                route_provider_id.clone()
             } else {
                 m.to_string()
             }
@@ -947,6 +992,29 @@ impl AcpClient {
                 cmd.env("PATH", path);
             }
         }
+        // agent-home is shared by every independent official chat and every
+        // custom chat. Seal a private directory so one spawn cannot replace
+        // the other's auth.json while nested tools are still reading it.
+        let proc_home = if agent_home_prep {
+            match crate::agent_proc_home::create(&grok_home, custom_route) {
+                Ok(dir) => Some(dir),
+                Err(e) => {
+                    drop(route_auth_guard);
+                    return Err(AgentError::new(
+                        AgentErrorCode::ConnectFailed,
+                        format!("failed to prepare a private agent home: {e}"),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+        let grok_home = proc_home.clone().unwrap_or(grok_home);
+        let discard_proc_home = || {
+            if let Some(ref dir) = proc_home {
+                crate::agent_proc_home::discard(dir);
+            }
+        };
         if ssh_alias.is_none() {
             cmd.env("GROK_HOME", &grok_home);
         }
@@ -1007,6 +1075,8 @@ impl AcpClient {
         );
 
         let mut child = cmd.spawn().map_err(|e| {
+            drop(route_auth_guard);
+            discard_proc_home();
             let code = if ssh_alias.is_some() {
                 AgentErrorCode::ConnectFailed
             } else {
@@ -1023,18 +1093,18 @@ impl AcpClient {
             "acp: spawned child"
         );
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| AgentError::new(AgentErrorCode::AgentCrashed, "no stdin on child"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| AgentError::new(AgentErrorCode::AgentCrashed, "no stdout on child"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| AgentError::new(AgentErrorCode::AgentCrashed, "no stderr on child"))?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            discard_proc_home();
+            AgentError::new(AgentErrorCode::AgentCrashed, "no stdin on child")
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            discard_proc_home();
+            AgentError::new(AgentErrorCode::AgentCrashed, "no stdout on child")
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            discard_proc_home();
+            AgentError::new(AgentErrorCode::AgentCrashed, "no stderr on child")
+        })?;
 
         let client = Arc::new(Self {
             child: AsyncMutex::new(Some(child)),
@@ -1056,8 +1126,10 @@ impl AcpClient {
             empty_mcp_servers,
             sandbox_profile: ParkingMutex::new(sandbox.map(|sb| sb.profile.clone())),
             custom_route,
+            route_provider_id,
             rewind_supported: ParkingMutex::new(None),
             ssh_alias: ssh_alias.clone(),
+            proc_home: std::sync::Mutex::new(proc_home),
         });
 
         client.start_read_loop(Box::new(stdout));
@@ -1155,8 +1227,10 @@ impl AcpClient {
             sandbox_profile: ParkingMutex::new(None),
             // Remote ACP: treat as official-class for reuse (no local auth strip).
             custom_route: false,
+            route_provider_id: crate::providers::SESSION_PROVIDER_OFFICIAL.to_string(),
             rewind_supported: ParkingMutex::new(None),
             ssh_alias: None,
+            proc_home: std::sync::Mutex::new(None),
         });
         client.start_read_loop(Box::new(read_half));
         Ok((client, event_rx))
@@ -1165,6 +1239,15 @@ impl AcpClient {
     /// Whether this process was spawned for a custom relay route (api_key only).
     pub fn is_custom_route(&self) -> bool {
         self.custom_route
+    }
+
+    /// `official` or the custom section id this process was spawned for.
+    pub fn route_provider_id(&self) -> &str {
+        if self.route_provider_id.is_empty() {
+            crate::providers::SESSION_PROVIDER_OFFICIAL
+        } else {
+            &self.route_provider_id
+        }
     }
 
     /// Spawn the transport read loop over any `AsyncRead` (child stdout or the
@@ -2579,16 +2662,18 @@ impl AcpClient {
         .await
     }
 
-    /// Switch model on the live agent session (`session/set_model`).
-    /// Switch model on the live agent session (`session/set_model`).
-    /// Uses the process's most recently bound agent session id.
-    pub async fn set_model(&self, model_id: &str) -> Result<(), String> {
-        let sid = self
-            .agent_session_id
-            .lock()
-            .clone()
-            .ok_or_else(|| "no agent session".to_string())?;
-        self.set_model_for(&sid, model_id).await
+    /// `x.ai/session/info` — the payload behind the pager `/context` view.
+    /// Live stdio registers the underscore form; older agents use the bare name.
+    pub async fn session_info(&self, session_id: &str) -> Result<Value, String> {
+        let params = json!({ "sessionId": session_id });
+        let raw = match self.request("_x.ai/session/info", params.clone()).await {
+            Ok(v) => v,
+            Err(e) if rpc_looks_like_method_not_found(&e) => {
+                self.request("x.ai/session/info", params).await?
+            }
+            Err(e) => return Err(e),
+        };
+        unwrap_session_info(raw)
     }
 
     /// Switch model on an explicit session (`session/set_model`).
@@ -2596,20 +2681,50 @@ impl AcpClient {
     /// mean — the process-level "recently bound" id may belong to another
     /// App session on the same process.
     pub async fn set_model_for(&self, session_id: &str, model_id: &str) -> Result<(), String> {
+        self.set_model_for_inner(session_id, model_id, None).await
+    }
+
+    /// Same as [`Self::set_model_for`], plus `_meta.contextWindow`.
+    /// Reasoning effort is omitted so the CLI keeps the current effort.
+    pub async fn set_context_window_for(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        context_window: u64,
+    ) -> Result<(), String> {
+        if context_window == 0 {
+            return Err("context window must be positive".into());
+        }
+        self.set_model_for_inner(session_id, model_id, Some(context_window))
+            .await
+    }
+
+    async fn set_model_for_inner(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        context_window: Option<u64>,
+    ) -> Result<(), String> {
         let model_id = model_id.trim();
         if model_id.is_empty() {
             return Err("model id empty".into());
         }
         let sid = session_id.to_string();
         // ACP SetSessionModelRequest: sessionId + modelId (+ optional meta).
+        // Absent `_meta` preserves effort and the selected window.
+        let params = match context_window {
+            Some(window) => json!({
+                "sessionId": sid,
+                "modelId": model_id,
+                "_meta": { "contextWindow": window },
+            }),
+            None => json!({
+                "sessionId": sid,
+                "modelId": model_id,
+            }),
+        };
         let result = self
-            .request(
-                "session/set_model",
-                json!({
-                    "sessionId": sid,
-                    "modelId": model_id,
-                }),
-            )
+            .request("session/set_model", params)
             .await
             .map_err(|e| format!("session/set_model: {e}"))?;
         // Best-effort: some agents echo currentModelId.
@@ -3072,6 +3187,14 @@ impl AcpClient {
         *self.stdin.lock().await = None;
         self.last_update_by_session.lock().clear();
         *self.last_update_unstamped.lock() = None;
+        let proc_home = self
+            .proc_home
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(dir) = proc_home {
+            crate::agent_proc_home::discard(&dir);
+        }
     }
 }
 
@@ -3155,6 +3278,57 @@ pub fn wire_session_interject_params(session_id: &str, text: &str) -> Value {
         "sessionId": session_id,
         "text": text,
     })
+}
+
+/// Pull the session-info object out of an ext-method result.
+///
+/// Grok Build wraps it as `{ "result": SessionInfoResponse, "error"?: ... }`.
+/// Some agents return the object itself, or either form as a JSON string.
+pub(crate) fn unwrap_session_info(raw: Value) -> Result<Value, String> {
+    let value = coerce_session_info_json(raw);
+    if let Some(err) = value.get("error").filter(|e| !e.is_null()) {
+        let has_body = value.get("result").is_some_and(|r| r.is_object());
+        if !has_body {
+            return Err(session_info_error_text(err));
+        }
+    }
+    let body = value
+        .get("result")
+        .filter(|r| r.is_object())
+        .cloned()
+        .unwrap_or(value);
+    if body.get("context").is_some()
+        || body.get("sessionId").is_some()
+        || body.get("session_id").is_some()
+    {
+        return Ok(body);
+    }
+    Err("invalid session info response".into())
+}
+
+fn coerce_session_info_json(raw: Value) -> Value {
+    match raw {
+        Value::String(s) => serde_json::from_str(&s).unwrap_or(Value::Null),
+        Value::Object(map) => {
+            if let Some(Value::String(s)) = map.get("result") {
+                if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                    return parsed;
+                }
+            }
+            Value::Object(map)
+        }
+        other => other,
+    }
+}
+
+fn session_info_error_text(err: &Value) -> String {
+    if let Some(s) = err.as_str() {
+        return s.to_string();
+    }
+    err.get("message")
+        .and_then(|m| m.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| err.to_string())
 }
 
 /// Whether an ACP RPC error indicates the method name is unknown on this agent.
@@ -5078,6 +5252,17 @@ pub fn provider_retry_abort_rpc_message(reason: &str) -> String {
     }
 }
 
+/// Mid-stream body decode failure reported by the CLI reqwest client.
+///
+/// This is a flaky SSE break, not a dead socket. The same reason often
+/// recovers and keeps editing, so it must **not** join
+/// [`is_hard_transport_retry_reason`] or fail the turn on attempt 1.
+pub fn is_stream_decode_retry_reason(reason: &str) -> bool {
+    reason
+        .to_ascii_lowercase()
+        .contains("error decoding response body")
+}
+
 /// True when the retry reason looks like a hard transport failure (not a flaky 5xx).
 pub fn is_hard_transport_retry_reason(reason: &str) -> bool {
     let r = reason.to_ascii_lowercase();
@@ -5474,6 +5659,21 @@ mod retry_tests {
         assert!(!is_hard_transport_retry_reason(
             "HTTP 503 Service Unavailable"
         ));
+    }
+
+    #[test]
+    fn stream_decode_error_is_not_a_hard_abort() {
+        let reason = "reqwest error stream: Transport error: error decoding response body";
+        assert!(is_stream_decode_retry_reason(reason));
+        assert!(is_stream_decode_retry_reason(
+            "Transport error: Error decoding response body"
+        ));
+        assert!(!is_stream_decode_retry_reason(
+            "error sending request for url"
+        ));
+        assert!(!is_hard_transport_retry_reason(reason));
+        assert!(!should_abort_provider_retry_ex(1, 15, "retrying", reason));
+        assert!(!should_abort_provider_retry_ex(3, 15, "retrying", reason));
     }
 
     #[test]
@@ -6433,6 +6633,29 @@ fn json_id_u64(v: Option<&Value>) -> Option<u64> {
 #[cfg(test)]
 mod cached_token_route_tests {
     use super::*;
+
+    #[test]
+    fn unwrap_session_info_reads_the_pager_envelope() {
+        let raw = serde_json::json!({
+            "result": {
+                "sessionId": "s1",
+                "model": "grok-4.7",
+                "context": { "used": 3300, "total": 500000 }
+            }
+        });
+        let body = unwrap_session_info(raw).unwrap();
+        assert_eq!(body["model"], "grok-4.7");
+        assert_eq!(body["context"]["total"], 500000);
+    }
+
+    #[test]
+    fn unwrap_session_info_reads_a_string_envelope_and_surfaces_errors() {
+        let raw =
+            serde_json::json!(r#"{"result":{"sessionId":"s","context":{"used":1,"total":2}}}"#);
+        assert!(unwrap_session_info(raw).is_ok());
+        let err = unwrap_session_info(serde_json::json!({ "error": "no session" })).unwrap_err();
+        assert_eq!(err, "no session");
+    }
 
     #[test]
     fn rewind_unsupported_error_matches_method_not_found() {

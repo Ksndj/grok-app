@@ -14,6 +14,7 @@ import type { PermissionPolicyId, ModelOption, EffortOption } from "@/lib/grokCa
 import type { SlashItem, SlashKindFilter, SlashKindCounts } from "@/lib/slashCatalog";
 import type { FloatingPos } from "@/lib/floatingMenu";
 import type { LiveTokenQuery } from "@/hooks/useComposerController";
+import type { ComposerQueryRange } from "@/lib/composerQuery";
 import type { VoiceGate } from "@/hooks/useVoiceDictation";
 import type { VoiceFsmState } from "@/lib/voiceDictation";
 import type { SideWorkbenchState } from "@/lib/sideWorkbench";
@@ -116,6 +117,7 @@ export type WorkbenchComposerColumnProps = {
   confirmRemoveWorktree: (wt: GitWorktreeEntry) => void;
   connecting: boolean;
   contextUsageDisplay: ContextUsageDisplay;
+  refreshContextInfo: () => void;
   currentModelWindow: number | null;
   customRouteActive: boolean;
   cycleAttachedChatScope: (id: string) => void;
@@ -136,7 +138,7 @@ export type WorkbenchComposerColumnProps = {
   goalMode: boolean;
   guideQueuedMessage: (item: QueuedSend) => Promise<void>;
   guidingQueueItemId: string | null;
-  handleContextWindow: (tokens: number) => Promise<void>;
+  handleContextWindow: (tokens: number) => Promise<boolean>;
   handleEffortPick: (nextEffort: string) => void;
   handleModelPick: (pick: ComposerModelPick) => Promise<void>;
   layout: LayoutPrefs;
@@ -152,6 +154,7 @@ export type WorkbenchComposerColumnProps = {
   onComposerPasteFiles: (files: File[]) => void;
   onComposerPasteMediaFallback: (opts?: { expectMedia?: boolean | undefined; } | undefined) => void;
   onSlashQueryChange: (q: { start: number; query: string; end: number; } | null) => void;
+  onAtQueryChange: (q: ComposerQueryRange | null) => void;
   openAsidePane: () => void;
   openQueueEdit: (item: QueuedSend) => void;
   openSession: (s: SessionRow, project?: Project | null | undefined) => Promise<void>;
@@ -238,7 +241,7 @@ export type WorkbenchComposerColumnProps = {
   slashCatalogCount: number;
   slashKindCounts: SlashKindCounts;
   slashKindFilter: SlashKindFilter;
-  stop: () => Promise<void>;
+  stop: (sessionId?: string | null) => Promise<boolean>;
   switchToWorktree: (wt: GitWorktreeEntry) => Promise<void>;
   switchToBranch: (branch: GitBranchEntry) => Promise<void>;
   toggleVoice: () => void;

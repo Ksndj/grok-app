@@ -197,17 +197,20 @@ impl SessionManager {
     /// Accept when:
     /// - `rpc_id` is set (live reverse-RPC, including resume re-park), or
     /// - a plan gate is already pending (progress while waiting for approve), or
-    /// - a prompt is in flight (mid-turn plan drafting updates).
+    /// - a prompt is in flight (mid-turn plan drafting updates), or
+    /// - a `prompt_complete` is still deferred (early finish while tools run —
+    ///   execution progress updates land exactly in this window).
     ///
     /// Drop only historical plan *notifications* during idle load-replay with
-    /// no open gate (no rpc, no pending, no prompt).
+    /// no open gate (no rpc, no pending, no live turn).
     #[inline]
     pub(super) fn should_drop_plan_event(
         prompt_in_flight: bool,
+        deferred_prompt_complete: bool,
         pending_plan: bool,
         has_rpc_id: bool,
     ) -> bool {
-        if has_rpc_id || pending_plan || prompt_in_flight {
+        if has_rpc_id || pending_plan || prompt_in_flight || deferred_prompt_complete {
             return false;
         }
         true
@@ -793,6 +796,7 @@ impl SessionManager {
         tier: StallTier,
         saw_model_output: bool,
         saw_tool_activity: bool,
+        stream_interrupted: bool,
     ) {
         let _ = app.emit(
             "session://stream_stall",
@@ -804,6 +808,7 @@ impl SessionManager {
                 "tier": tier.as_str(),
                 "sawModelOutput": saw_model_output,
                 "sawToolActivity": saw_tool_activity,
+                "streamInterrupted": stream_interrupted,
             }),
         );
     }
@@ -1595,6 +1600,7 @@ mod stream_emit_lock_tests {
                 workspace_id: None,
                 workspace_root_snapshot: None,
                 workspace_capability: None,
+                provider_id: None,
             },
             fsm,
             backend: "grok_agent_stdio".into(),
@@ -1615,6 +1621,7 @@ mod stream_emit_lock_tests {
             policy: PermissionPolicy::default(),
             provider_retry_attempt: 0,
             provider_retry_aborted: false,
+            last_provider_retry: None,
             needs_history_bootstrap: false,
             pending_plan_rpc_id: None,
             pending_permission_rpc_id: None,

@@ -36,7 +36,11 @@ import {
   type ComposerModelPick,
   type ComposerProviderInput,
 } from "@/lib/composerModelGroups";
-import { composerModelChipLabel } from "@/lib/effectiveModel";
+import { selectableContextWindows } from "@/lib/contextWindowCommand";
+import {
+  composerModelChipLabel,
+  resolveCustomRouteDisplay,
+} from "@/lib/effectiveModel";
 import { formatTokenCount } from "@/lib/contextUsage";
 import { Tip } from "@/components/ui/tooltip";
 import {
@@ -386,9 +390,12 @@ export interface ComposerModelMenuProps {
   locale?: string;
   /** Effective context window (tokens) for the active route. */
   contextWindow?: number | null;
-  /** True for custom routes (editable); false for official (read-only). */
+  /**
+   * True for custom routes (type a token count). Official routes with more
+   * than one advertised window list those sizes instead.
+   */
   contextWindowEditable?: boolean;
-  /** Save a new context window (custom channels only). */
+  /** Save a custom token count, or pick an official advertised window. */
   onContextWindow?: (tokens: number) => void;
   /**
    * When custom route is active, use channel-configured efforts
@@ -618,6 +625,9 @@ export function ComposerModelMenu({
     flyLeave.current = window.setTimeout(() => setHubFlyout(null), 140);
   };
   const modelList = models.length > 0 ? models : GROK_BUILD_MODELS;
+  const officialWindowChoices = contextWindowEditable
+    ? []
+    : selectableContextWindows(findModel(modelId, modelList));
   const groups = buildComposerModelGroups({
     officialModels: modelList,
     providers,
@@ -749,24 +759,15 @@ export function ComposerModelMenu({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [modelMenu.open, pane, hubFlyout]);
 
-  const activeCustom =
-    activeSource === "custom" && activeProviderId
-      ? (() => {
-          const p = providers.find((x) => x.id === activeProviderId);
-          if (!p) return null;
-          const activeId = p.model?.trim() ?? "";
-          const entry =
-            p.models?.find((m) => m.id === activeId) ??
-            (activeId ? { id: activeId, name: activeId } : null);
-          return entry
-            ? { name: entry.name || entry.id, model: entry.id }
-            : { name: p.name, model: p.model };
-        })()
-      : null;
-  const activeRequestModel =
+  const customRoute =
     activeSource === "custom"
-      ? providers.find((x) => x.id === activeProviderId)?.model ?? null
+      ? resolveCustomRouteDisplay(
+          providers.find((x) => x.id === activeProviderId),
+          modelId,
+        )
       : null;
+  const activeCustom = customRoute?.chip ?? null;
+  const activeRequestModel = customRoute?.requestModel ?? null;
   const officialLabel = activeModel?.label ?? modelId;
   const modelLabel = composerModelChipLabel({
     modelId,
@@ -1067,6 +1068,29 @@ export function ComposerModelMenu({
                           }
                         >
                           {stopLabelFor(s)}
+                        </span>
+                      </span>
+                      {active ? (
+                        <span className="cmm__opt-check" aria-hidden>
+                          <IconCheck size={16} />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })
+              ) : officialWindowChoices.length > 1 ? (
+                officialWindowChoices.map((n) => {
+                  const active = contextWindow === n;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      className={"cmm__opt" + (active ? " is-active" : "")}
+                      onClick={() => onContextWindow?.(n)}
+                    >
+                      <span className="cmm__opt-main">
+                        <span className="cmm__opt-title">
+                          {formatTokenCount(n, locale)}
                         </span>
                       </span>
                       {active ? (

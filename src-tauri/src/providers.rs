@@ -1410,6 +1410,204 @@ pub fn custom_provider_id_for_catalog_model(catalog_id: &str) -> Option<String> 
 ///   owning section id so spawn `--model` and later `session/set_model` agree.
 ///   CLI `--model` does not resolve App-only `app_models` ids; ACP set_model can,
 ///   which previously caused turn-1 official / turn-2 custom silent switches.
+///
+/// `session/set_model` on a generic custom route sends that same section id.
+/// The CLI picker name is the TOML header (`[model.api-top]`), and the `model`
+/// field is only the id sent upstream. Passing the upstream id looks up a
+/// missing section, falls through to the built-in Grok catalog, and 401s
+/// because the custom home has no OIDC (#1294). A Grok Build-compatible relay
+/// is the exception: spawn already binds the real catalog id, and set_model
+/// repeats that id.
+pub const SESSION_PROVIDER_OFFICIAL: &str = "official";
+
+pub fn is_session_provider_official(id: &str) -> bool {
+    let id = id.trim();
+    id.is_empty() || id.eq_ignore_ascii_case(SESSION_PROVIDER_OFFICIAL)
+}
+
+/// Provider this chat should connect with. Missing → the global route.
+pub fn session_route_provider_id(stored: Option<&str>) -> String {
+    match stored.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) if is_session_provider_official(id) => SESSION_PROVIDER_OFFICIAL.into(),
+        Some(id) => id.to_string(),
+        None => match active_route() {
+            ActiveRoute::Custom { id } => id,
+            ActiveRoute::Official => SESSION_PROVIDER_OFFICIAL.into(),
+        },
+    }
+}
+
+/// How a composer provider pick relates to the route this chat already uses.
+///
+/// An empty stored id means "follow the global route". Writing that same
+/// route onto the row is not a switch: respawning would drop the CLI resume
+/// id and skip `session/set_model`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionProviderPick {
+    SameRoute,
+    RouteChanged,
+}
+
+/// Route a connect or a composer pick actually runs on.
+///
+/// SSH is always official (`connect_route_id(true, _)`), including when the
+/// row or the pick names a custom provider.
+pub fn connect_route_id(ssh: bool, stored_provider: Option<&str>) -> String {
+    if ssh {
+        SESSION_PROVIDER_OFFICIAL.to_string()
+    } else {
+        session_route_provider_id(stored_provider)
+    }
+}
+
+pub fn session_provider_pick(
+    ssh: bool,
+    stored: Option<&str>,
+    picked: Option<&str>,
+) -> SessionProviderPick {
+    let Some(picked) = picked.map(str::trim).filter(|s| !s.is_empty()) else {
+        return SessionProviderPick::SameRoute;
+    };
+    let before = connect_route_id(ssh, stored);
+    let after = connect_route_id(ssh, Some(picked));
+    if before == after {
+        SessionProviderPick::SameRoute
+    } else {
+        SessionProviderPick::RouteChanged
+    }
+}
+
+/// Provider id to write for this pick. SSH never stores a custom id.
+pub fn provider_id_to_persist(ssh: bool, picked: Option<&str>) -> Option<String> {
+    let picked = picked.map(str::trim).filter(|s| !s.is_empty())?;
+    if ssh && !is_session_provider_official(picked) {
+        None
+    } else {
+        Some(picked.to_string())
+    }
+}
+
+/// Model id to send with `session/set_model` after a provider pick.
+///
+/// A route change cold-spawns instead. SSH never sends a custom provider id.
+pub fn set_model_id_after_provider_pick(
+    ssh: bool,
+    model_id: Option<&str>,
+    picked_provider: Option<&str>,
+) -> Option<String> {
+    let model = model_id.map(str::trim).filter(|s| !s.is_empty())?;
+    if ssh {
+        let custom_provider = picked_provider
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_some_and(|id| !is_session_provider_official(id));
+        if custom_provider || is_custom_provider_id(model) {
+            return None;
+        }
+    }
+    Some(model.to_string())
+}
+
+/// What `composer_prefs_set` should do with one provider/model pick.
+pub struct ComposerProviderPick {
+    pub route_changed: bool,
+    pub provider_to_persist: Option<String>,
+    pub set_model_id: Option<String>,
+}
+
+pub fn composer_provider_pick(
+    ssh: bool,
+    stored: Option<&str>,
+    picked_provider: Option<&str>,
+    model_id: Option<&str>,
+) -> ComposerProviderPick {
+    let route_changed = matches!(
+        session_provider_pick(ssh, stored, picked_provider),
+        SessionProviderPick::RouteChanged
+    );
+    let provider_to_persist = provider_id_to_persist(ssh, picked_provider);
+    let set_model_id = if route_changed {
+        None
+    } else {
+        set_model_id_after_provider_pick(ssh, model_id, picked_provider)
+    };
+    ComposerProviderPick {
+        route_changed,
+        provider_to_persist,
+        set_model_id,
+    }
+}
+
+/// `--model` for a process bound to `provider_id`.
+/// Custom routes spawn with the section id. Official routes spawn with a catalog id.
+pub fn spawn_model_for_provider(provider_id: &str, composer_model: &str) -> String {
+    if is_session_provider_official(provider_id) {
+        return session_set_model_id_for(SESSION_PROVIDER_OFFICIAL, composer_model);
+    }
+    provider_id.trim().to_string()
+}
+
+/// `session/set_model` id for one chat on `provider_id`.
+pub fn session_set_model_id_for(provider_id: &str, composer_model: &str) -> String {
+    if is_session_provider_official(provider_id) {
+        let m = composer_model.trim();
+        if m.is_empty() || is_custom_provider_id(m) || m == OFFICIAL_DEFAULT_MODEL {
+            return OFFICIAL_CATALOG_MODEL.into();
+        }
+        if is_official_catalog_model(m) {
+            return m.into();
+        }
+        return m.into();
+    }
+    let id = provider_id.trim();
+    let found = list_custom_providers()
+        .ok()
+        .and_then(|list| list.providers.into_iter().find(|p| p.id == id));
+    let (models, allow_catalog_id) = match found {
+        Some(p) => {
+            let allow = p.provider_mode == PROVIDER_MODE_GROK_BUILD_PROXY;
+            let mut ids = Vec::new();
+            if !p.model.trim().is_empty() {
+                ids.push(p.model);
+            }
+            ids.extend(p.models.into_iter().map(|entry| entry.id));
+            (ids, allow)
+        }
+        None => (Vec::new(), false),
+    };
+    resolve_session_set_model_id(Some(id), composer_model, &models, allow_catalog_id)
+}
+
+/// Pure half of [`session_set_model_id_for`]. `None` route means official; the
+/// caller passes an already resolved official id.
+///
+/// `allow_catalog_id` is only for a Grok Build-compatible relay, whose spawn
+/// already selected a real catalog id. Generic relays must keep the section id
+/// even when `composer_model` is listed in `app_models`.
+pub fn resolve_session_set_model_id(
+    custom_provider_id: Option<&str>,
+    composer_model: &str,
+    same_provider_models: &[String],
+    allow_catalog_id: bool,
+) -> String {
+    let m = composer_model.trim();
+    let Some(id) = custom_provider_id.map(str::trim).filter(|s| !s.is_empty()) else {
+        return if m.is_empty() {
+            OFFICIAL_CATALOG_MODEL.into()
+        } else {
+            m.to_string()
+        };
+    };
+    if allow_catalog_id
+        && !m.is_empty()
+        && m != id
+        && same_provider_models.iter().any(|got| got == m)
+    {
+        return m.to_string();
+    }
+    id.to_string()
+}
+
 pub fn agent_spawn_model_id(composer_model: &str) -> String {
     match active_route() {
         ActiveRoute::Custom { id } => id,
@@ -1431,14 +1629,10 @@ pub fn agent_spawn_model_id(composer_model: &str) -> String {
     }
 }
 
-fn grok_build_proxy_spawn_from_text(
-    text: &str,
+fn grok_build_proxy_spawn_from_section(
+    section: &ModelSection,
     composer_model: &str,
 ) -> Option<GrokBuildProxySpawn> {
-    let default = get_models_default(text)?;
-    let section = parse_model_sections(text)
-        .into_iter()
-        .find(|s| s.id == default)?;
     if normalize_provider_mode(
         section
             .fields
@@ -1482,11 +1676,47 @@ fn grok_build_proxy_spawn_from_text(
     })
 }
 
+fn grok_build_proxy_spawn_from_text(
+    text: &str,
+    composer_model: &str,
+) -> Option<GrokBuildProxySpawn> {
+    let default = get_models_default(text)?;
+    let section = parse_model_sections(text)
+        .into_iter()
+        .find(|s| s.id == default)?;
+    grok_build_proxy_spawn_from_section(&section, composer_model)
+}
+
+/// Proxy spawn for one chat's provider. Official, and any non-proxy section,
+/// return `None` so a global proxy default cannot leak onto another chat.
+fn grok_build_proxy_spawn_for_provider_text(
+    text: &str,
+    provider_id: &str,
+    composer_model: &str,
+) -> Option<GrokBuildProxySpawn> {
+    if is_session_provider_official(provider_id) {
+        return None;
+    }
+    let section = parse_model_sections(text)
+        .into_iter()
+        .find(|s| s.id == provider_id.trim())?;
+    grok_build_proxy_spawn_from_section(&section, composer_model)
+}
+
 /// Resolve the active explicit Grok Build-compatible relay for one ACP spawn.
 /// The key is returned only to the spawn caller and must never be logged.
 pub fn active_grok_build_proxy_spawn(composer_model: &str) -> Option<GrokBuildProxySpawn> {
     let text = read_text(&agent_config_toml());
     grok_build_proxy_spawn_from_text(&text, composer_model)
+}
+
+/// Proxy env for a chat bound to `provider_id`, ignoring `[models].default`.
+pub fn session_grok_build_proxy_spawn(
+    provider_id: &str,
+    composer_model: &str,
+) -> Option<GrokBuildProxySpawn> {
+    let text = read_text(&agent_config_toml());
+    grok_build_proxy_spawn_for_provider_text(&text, provider_id, composer_model)
 }
 
 /// After official login / account switch: only the official route should
@@ -1500,27 +1730,36 @@ pub fn should_sync_cli_auth_after_account_change(route: &ActiveRoute) -> bool {
 ///
 /// Custom: strip agent-home `auth.json` so inference uses `api_key` only.
 /// Official: mirror `~/.grok/auth.json` into agent-home for OAuth.
+pub fn route_auth_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    &LOCK
+}
+
 pub fn prepare_route_auth_for_agent() {
-    match active_route() {
-        ActiveRoute::Custom { ref id } => {
-            // Heal shared→independent before spawn so GROK_HOME matches config (#557).
-            let _ = ensure_independent_for_custom_route();
-            crate::account::clear_agent_home_auth();
-            tracing::info!(
+    let custom = matches!(active_route(), ActiveRoute::Custom { .. });
+    prepare_route_auth(custom);
+}
+
+/// Prepare agent-home auth for one spawn. `custom` strips `auth.json` so the
+/// process uses that provider's `api_key`. Official copies OIDC in.
+/// Callers that spawn different providers must not overlap this write.
+pub fn prepare_route_auth(custom: bool) {
+    if custom {
+        let _ = ensure_independent_for_custom_route();
+        crate::account::clear_agent_home_auth();
+        tracing::info!(
+            target: "providers",
+            "custom route spawn: cleared agent-home auth.json (api_key only)"
+        );
+    } else {
+        debug_assert!(should_sync_cli_auth_after_account_change(
+            &ActiveRoute::Official
+        ));
+        if let Err(e) = crate::account::sync_cli_auth_to_agent_home() {
+            tracing::warn!(
                 target: "providers",
-                "custom route `{id}`: cleared agent-home auth.json (api_key only)"
+                "official route: auth sync failed: {e}"
             );
-        }
-        ActiveRoute::Official => {
-            debug_assert!(should_sync_cli_auth_after_account_change(
-                &ActiveRoute::Official
-            ));
-            if let Err(e) = crate::account::sync_cli_auth_to_agent_home() {
-                tracing::warn!(
-                    target: "providers",
-                    "official route: auth sync failed: {e}"
-                );
-            }
         }
     }
     // Never import Claude/Cursor MCP catalogs into App agent-home sessions.
@@ -3042,6 +3281,15 @@ mod tests {
             "app_provider_mode = \"generic\"",
         );
         assert!(grok_build_proxy_spawn_from_text(&generic, "grok-4.5").is_none());
+
+        // A chat bound to this section still resolves when it is not the global default.
+        let other_default = set_models_default(&text, "grok-4.7");
+        let spawned =
+            grok_build_proxy_spawn_for_provider_text(&other_default, "beef-relay", "grok-4.5")
+                .expect("section spawn");
+        assert_eq!(spawned.model, "grok-4.5");
+        assert!(grok_build_proxy_spawn_for_provider_text(&text, "official", "grok-4.5").is_none());
+        assert!(grok_build_proxy_spawn_from_text(&other_default, "grok-4.5").is_none());
     }
 
     #[test]
@@ -3071,6 +3319,50 @@ mod tests {
             agent_home: String::new(),
             switched_to_independent: false,
         };
+        // Generic relay: the API model id is not a CLI section. Sending it
+        // makes Grok Build fall through to the built-in catalog (#1294).
+        assert_eq!(
+            resolve_session_set_model_id(
+                Some("api-top"),
+                "grok-4.6",
+                &["grok-4.6".into(), "grok-4.5".into()],
+                false,
+            ),
+            "api-top"
+        );
+        assert_eq!(
+            resolve_session_set_model_id(
+                Some("relay"),
+                "deepseek-v4-pro",
+                &["deepseek-v4-flash".into(), "deepseek-v4-pro".into()],
+                false,
+            ),
+            "relay"
+        );
+        // Grok Build-compatible relay: spawn bound the catalog id, so set_model
+        // repeats it.
+        assert_eq!(
+            resolve_session_set_model_id(
+                Some("beef-relay"),
+                "grok-4.5",
+                &["grok-4.6".into(), "grok-4.5".into()],
+                true,
+            ),
+            "grok-4.5"
+        );
+        assert_eq!(
+            resolve_session_set_model_id(
+                Some("relay"),
+                "grok-4.7",
+                &["deepseek-v4-flash".into()],
+                true,
+            ),
+            "relay"
+        );
+        assert_eq!(
+            resolve_session_set_model_id(None, "grok-4.7", &[], false),
+            "grok-4.7"
+        );
         assert!(provider_mutation_needs_agent_reload(true, "other", &active));
         assert!(provider_mutation_needs_agent_reload(
             false, "relay", &active
@@ -3823,5 +4115,118 @@ context_window = "1000000"
             !config.contains("extra_headers"),
             "empty list must drop extra_headers, not copy the old table:\n{config}"
         );
+    }
+
+    #[test]
+    fn explicit_provider_pick_compares_effective_ids() {
+        use SessionProviderPick::*;
+        assert_eq!(
+            session_provider_pick(false, Some("official"), Some("official")),
+            SameRoute
+        );
+        assert_eq!(
+            session_provider_pick(false, Some("relay-b"), Some("relay-b")),
+            SameRoute
+        );
+        assert_eq!(
+            session_provider_pick(false, Some("relay-b"), Some("official")),
+            RouteChanged
+        );
+        assert_eq!(
+            session_provider_pick(false, Some("official"), Some("relay-b")),
+            RouteChanged
+        );
+        assert_eq!(
+            session_provider_pick(false, Some("official"), None),
+            SameRoute
+        );
+        assert_eq!(session_provider_pick(false, None, None), SameRoute);
+    }
+
+    #[test]
+    fn ssh_pick_stays_official_and_drops_a_custom_provider() {
+        use SessionProviderPick::*;
+        let _lock = crate::paths::APP_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp = std::env::temp_dir().join(format!(
+            "grok-app-ssh-pick-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("temp home");
+        let previous = std::env::var_os("GROK_APP_HOME");
+        std::env::set_var("GROK_APP_HOME", &tmp);
+        let _ = crate::paths::ensure_app_dirs();
+
+        assert_eq!(connect_route_id(true, Some("relay-b")), "official");
+        assert_eq!(connect_route_id(true, None), "official");
+        assert_eq!(connect_route_id(false, Some("relay-b")), "relay-b");
+
+        // Official model on an SSH chat: never a route change, even if the row
+        // still has a custom id or the stored id is empty.
+        assert_eq!(
+            session_provider_pick(true, None, Some("official")),
+            SameRoute
+        );
+        assert_eq!(
+            session_provider_pick(true, Some("relay-b"), Some("official")),
+            SameRoute
+        );
+        assert_eq!(
+            session_provider_pick(true, Some(""), Some("official")),
+            SameRoute
+        );
+        let official = composer_provider_pick(true, None, Some("official"), Some("grok-4.7"));
+        assert!(!official.route_changed);
+        assert_eq!(official.provider_to_persist.as_deref(), Some("official"));
+        assert_eq!(official.set_model_id.as_deref(), Some("grok-4.7"));
+        let from_custom_row =
+            composer_provider_pick(true, Some("relay-b"), Some("official"), Some("grok-4.5"));
+        assert!(!from_custom_row.route_changed);
+        assert_eq!(from_custom_row.set_model_id.as_deref(), Some("grok-4.5"));
+
+        // Custom provider on SSH: no respawn, no persisted custom id, no set_model.
+        assert_eq!(
+            session_provider_pick(true, None, Some("relay-b")),
+            SameRoute
+        );
+        assert_eq!(
+            session_provider_pick(true, Some("official"), Some("relay-b")),
+            SameRoute
+        );
+        let custom = composer_provider_pick(true, None, Some("relay-b"), Some("deepseek-v4-flash"));
+        assert!(!custom.route_changed);
+        assert!(custom.provider_to_persist.is_none());
+        assert!(custom.set_model_id.is_none());
+        let custom_id_as_model =
+            composer_provider_pick(true, Some("official"), Some("relay-b"), Some("relay-b"));
+        assert!(custom_id_as_model.provider_to_persist.is_none());
+        assert!(custom_id_as_model.set_model_id.is_none());
+
+        // Same cells locally still respawn and still send the model on a real switch.
+        let local_switch = composer_provider_pick(
+            false,
+            Some("official"),
+            Some("relay-b"),
+            Some("deepseek-v4-flash"),
+        );
+        assert!(local_switch.route_changed);
+        assert_eq!(local_switch.provider_to_persist.as_deref(), Some("relay-b"));
+        assert!(local_switch.set_model_id.is_none());
+        let local_same =
+            composer_provider_pick(false, Some("official"), Some("official"), Some("grok-4.5"));
+        assert!(!local_same.route_changed);
+        assert_eq!(local_same.set_model_id.as_deref(), Some("grok-4.5"));
+
+        match previous {
+            Some(value) => std::env::set_var("GROK_APP_HOME", value),
+            None => std::env::remove_var("GROK_APP_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

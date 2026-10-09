@@ -19,13 +19,15 @@ import { ContextUsageChip } from "@/components/ContextUsageChip";
 import { PromptHistoryPanel } from "@/components/PromptHistoryPanel";
 import { IconChevronDown, IconChevronUp, IconClock, IconClose, IconCode, IconImagine, IconMic, IconPlus, IconSkills } from "@/components/icons";
 import { Tip } from "@/components/ui/tooltip";
-import { isImagePath, mergeAttachments } from "@/lib/attachments";
+import { isImagePath, mergeAttachments, type Attachment } from "@/lib/attachments";
 import { chatHasUpdate, loadRecentAttachIds, lookupChatStatus, lookupChatTitle } from "@/lib/chatAttach";
 import { type PermissionPolicyId } from "@/lib/grokCatalog";
 import { removeRecentPrompt } from "@/lib/recentPromptHistory";
 import { queuePreviewText, shouldEnqueueSend } from "@/lib/sendQueue";
+import { sessionGoalClear } from "@/lib/goalClear";
 import { canType } from "@/lib/session";
 import { resolveVoiceMicChrome, voiceMicLabelMessageKey } from "@/lib/voiceDictation";
+import { useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { WorkbenchComposerColumnProps } from "@/app/WorkbenchComposerColumn";
 
@@ -83,6 +85,7 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
     composerSpellcheck,
     connecting,
     contextUsageDisplay,
+    refreshContextInfo,
     cycleAttachedChatScope,
     dragZone,
     effectiveCanSend,
@@ -102,6 +105,7 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
     onComposerPasteFiles,
     onComposerPasteMediaFallback,
     onSlashQueryChange,
+    onAtQueryChange,
     openQueueEdit,
     openSession,
     openSideSkillsPanel,
@@ -172,6 +176,18 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
     voiceDictationAutoSend,
     voiceGate,
   } = p;
+  /**
+   * 跨档降级补进来的附件（切到内置档时引用 → 附件条）。
+   *
+   * 必须 memo：它是薄岛里那个降级 effect 的依赖，行内函数会让 effect 在父组件每次
+   * 渲染后重跑，直到 `setDraft` 落盘才停。
+   */
+  const onDemoteRefs = useCallback(
+    (converted: Attachment[]) => {
+      setAttachments((prev) => mergeAttachments(prev, converted));
+    },
+    [setAttachments],
+  );
   return (
             <div
               ref={composerShellRef}
@@ -600,6 +616,8 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
                 onPasteFiles={onComposerPasteFiles}
                 onPasteMediaFallback={onComposerPasteMediaFallback}
                 onSlashQueryChange={onSlashQueryChange}
+                onAtQueryChange={onAtQueryChange}
+                onDemoteRefs={onDemoteRefs}
                 onKeyDown={onComposerKeyDown}
                 onContextMenu={onComposerContextMenu}
               />
@@ -696,7 +714,10 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
                       }}
                       onMode={(v) => {
                         setMode(v);
-                        if (v === "plan") setGoalMode(false);
+                        if (v === "plan") {
+                          setGoalMode(false);
+                          sessionGoalClear.arm(session.sessionId, session.state);
+                        }
                         void api
                           .composerPrefsSet({
                             projectId: activeProject?.id ?? null,
@@ -714,7 +735,13 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
                         <button
                           type="button"
                           className="chip chip--goal"
-                          onClick={() => setGoalMode(false)}
+                          onClick={() => {
+                            setGoalMode(false);
+                            sessionGoalClear.arm(
+                              session.sessionId,
+                              session.state,
+                            );
+                          }}
                           aria-label={tr("composer.goalClear")}
                         >
                           <IconImagine size={14} />
@@ -772,7 +799,19 @@ export function WorkbenchComposerShell(p: WorkbenchComposerShellProps) {
                         window: tr("context.window"),
                         percentUsed: tr("context.percentLabel"),
                         cacheHit: tr("context.cacheHit"),
+                        systemPrompt: tr("context.systemPrompt"),
+                        messages: tr("context.messages"),
+                        overhead: tr("context.overhead"),
+                        free: tr("context.free"),
+                        alreadyCounted: tr("context.alreadyCounted"),
+                        toolDefinitions: tr("context.toolDefinitions"),
+                        toolsDetail: tr("context.toolsDetail"),
+                        autoCompact: tr("context.autoCompact"),
+                        autoCompactNow: tr("context.autoCompactNow"),
+                        stats: tr("context.stats"),
+                        summary: tr("context.summary"),
                       }}
+                      onRefreshContext={refreshContextInfo}
                       onCompact={() => {
                         setCompactNote("");
                         setShowCompactModal(true);

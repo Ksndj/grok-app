@@ -14,6 +14,13 @@ use crate::store::{self};
 
 use super::*;
 
+fn catalog_advertises_context_window(tokens: u64) -> bool {
+    crate::models_catalog::list_available_models()
+        .models
+        .iter()
+        .any(|model| crate::models_catalog::model_supports_context_window(model, tokens))
+}
+
 impl SessionManager {
     #[allow(dead_code)]
     pub fn set_permission_policy(&self, policy: PermissionPolicy) {
@@ -45,6 +52,20 @@ impl SessionManager {
         session_id: &str,
         reason: &str,
     ) {
+        self.invalidate_spawn_flags_inner(Some(app), session_id, reason)
+            .await;
+    }
+
+    /// Clear one session's CLI resume id and drop only that session's process.
+    ///
+    /// `app` emits when the live slot actually respawns. Unit tests pass
+    /// `None` (no `AppHandle`); the detach still runs, it just skips the event.
+    async fn invalidate_spawn_flags_inner(
+        &self,
+        app: Option<&AppHandle>,
+        session_id: &str,
+        reason: &str,
+    ) {
         let _ = store::clear_session_agent_session_id(session_id);
         // Keep in-memory meta aligned so a mid-turn no-op connect cannot
         // resume the pre-change agent id after the turn ends.
@@ -63,7 +84,15 @@ impl SessionManager {
         }
         if self.is_live_session(session_id) {
             // soft_respawn already defers when the live turn is busy.
-            self.soft_respawn_with_reason(app, reason).await;
+            if self.detach_live_for_soft_respawn(reason).await {
+                if let Some(app) = app {
+                    let _ = app.emit(
+                        "session://agent_soft_respawn",
+                        serde_json::json!({ "reason": reason }),
+                    );
+                    Self::emit_state(app, &self.snapshot());
+                }
+            }
             return;
         }
         // Background mid-turn: queue like effort/policy changes. Dropping now
@@ -125,6 +154,20 @@ impl SessionManager {
 
     /// Soft-respawn and tell the UI why the agent process was reloaded.
     pub async fn soft_respawn_with_reason(&self, app: &AppHandle, reason: &str) {
+        if self.detach_live_for_soft_respawn(reason).await {
+            let _ = app.emit(
+                "session://agent_soft_respawn",
+                serde_json::json!({ "reason": reason }),
+            );
+            Self::emit_state(app, &self.snapshot());
+        }
+    }
+
+    /// Drop the live ACP so the next connect cold-spawns.
+    ///
+    /// Returns true when a process was detached and the UI should reload.
+    /// Mid-turn and already-empty slots return false (no emit).
+    async fn detach_live_for_soft_respawn(&self, reason: &str) -> bool {
         let (acp, sid, process_id, deferred) = {
             let mut guard = self.inner.lock();
             if let Some(s) = guard.as_mut() {
@@ -158,11 +201,11 @@ impl SessionManager {
                 self.pending_soft_respawn
                     .lock()
                     .insert(sid.to_string(), reason.to_string());
-                return;
+                return false;
             }
             if acp.is_none() {
                 self.pending_soft_respawn.lock().remove(sid);
-                return;
+                return false;
             }
         }
         if let Some(acp) = acp {
@@ -180,12 +223,9 @@ impl SessionManager {
             if let Some(sid) = sid {
                 self.pending_soft_respawn.lock().remove(&sid);
             }
-            let _ = app.emit(
-                "session://agent_soft_respawn",
-                serde_json::json!({ "reason": reason }),
-            );
-            Self::emit_state(app, &self.snapshot());
+            return true;
         }
+        false
     }
 
     /// If a mid-turn policy/effort/proxy change queued a respawn, run it
@@ -501,8 +541,7 @@ impl SessionManager {
                 s.pending_permission_options = None;
                 s.pending_permission_tool_name = None;
                 s.pending_permission_ui = None;
-                s.provider_retry_attempt = 0;
-                s.provider_retry_aborted = false;
+                Self::clear_provider_retry_memory(s);
                 // Leave AwaitingPermission / Streaming so UI busy clears after recycle.
                 if matches!(
                     s.fsm.state(),
@@ -673,23 +712,71 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Keep the in-memory row aligned with a provider just written to disk.
+    ///
+    /// Later `update_session_meta` calls replace the whole row. A snapshot taken
+    /// at connect time would otherwise erase `provider_id`.
+    pub fn remember_session_provider(&self, session_id: &str, provider_id: &str) {
+        let provider_id = provider_id.trim();
+        if session_id.is_empty() || provider_id.is_empty() {
+            return;
+        }
+        let owned = provider_id.to_string();
+        {
+            let mut guard = self.inner.lock();
+            if let Some(s) = guard.as_mut() {
+                if s.app_session_id == session_id {
+                    s.meta.provider_id = Some(owned.clone());
+                }
+            }
+        }
+        if let Some(s) = self.background.lock().get_mut(session_id) {
+            s.meta.provider_id = Some(owned);
+        }
+    }
+
     /// Apply model id on the live ACP session (best-effort session/set_model).
-    pub async fn set_model(&self, model_id: String) -> Result<(), String> {
+    ///
+    /// `session_id` is the chat the change belongs to. Only that chat gets
+    /// retuned when it owns the live slot — a draft, parked, or background
+    /// chat owns no agent here, and applying its model to the live slot used
+    /// to retune an unrelated conversation (same class as the effort scoping
+    /// fix). Other chats pick the model up from their saved prefs at connect.
+    pub async fn set_model(
+        &self,
+        model_id: String,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
         let model_id = model_id.trim().to_string();
         if model_id.is_empty() {
             return Err("model id empty".into());
         }
         // Store composer preference; agent receives channel-resolved id.
-        let agent_model = crate::providers::agent_spawn_model_id(&model_id);
+        // Disk is the source of truth. The live meta snapshot can predate
+        // `save_provider_on_session`, and replacing the row would wipe it.
+        let stored_provider = session_id.and_then(|id| {
+            crate::store::load_sessions_index()
+                .into_iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.provider_id)
+        });
+        let provider = stored_provider
+            .clone()
+            .unwrap_or_else(|| crate::providers::session_route_provider_id(None));
+        let agent_model = crate::providers::session_set_model_id_for(&provider, &model_id);
         let (acp, sid) = {
             let mut guard = self.inner.lock();
-            if let Some(s) = guard.as_mut() {
-                s.model_id = Some(model_id.clone());
-                s.meta.model_id = Some(model_id.clone());
-                let _ = store::update_session_meta(&s.meta);
-                (s.acp.clone(), s.meta.agent_session_id.clone())
-            } else {
-                (None, None)
+            match guard.as_mut() {
+                Some(s) if session_id.is_some_and(|id| id == s.app_session_id) => {
+                    s.model_id = Some(model_id.clone());
+                    s.meta.model_id = Some(model_id.clone());
+                    if let Some(pid) = stored_provider.clone() {
+                        s.meta.provider_id = Some(pid);
+                    }
+                    let _ = store::update_session_meta(&s.meta);
+                    (s.acp.clone(), s.meta.agent_session_id.clone())
+                }
+                _ => (None, None),
             }
         };
         // Target the live session explicitly (shared process safety).
@@ -697,6 +784,116 @@ impl SessionManager {
             acp.set_model_for(&sid, &agent_model).await?;
         }
         Ok(())
+    }
+
+    /// Set the live session's context window without changing the stored model.
+    ///
+    /// Wire shape matches Grok Build: `session/set_model` with
+    /// `_meta.contextWindow` only, so reasoning effort is preserved. The size
+    /// must be the model's catalog default or one of its advertised windows.
+    /// A chat that does not own the live slot is not retuned.
+    pub async fn set_context_window(
+        &self,
+        tokens: u64,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
+        if tokens == 0 {
+            return Err("context window must be positive".into());
+        }
+        let Some(app_session_id) = session_id.map(str::trim).filter(|id| !id.is_empty()) else {
+            // New-chat composer: the CLI already has a process, but this app
+            // has not called session/new. Remember the size and send it with
+            // the first set_model. Grok Build can switch immediately because
+            // its TUI creates that session at startup.
+            if !catalog_advertises_context_window(tokens) {
+                return Err(format!(
+                    "context window {tokens} is not one of the advertised sizes"
+                ));
+            }
+            *self.pending_context_window.lock() = Some(tokens);
+            return Ok(());
+        };
+        let (acp, agent_sid, model_id) = {
+            let guard = self.inner.lock();
+            let Some(s) = guard.as_ref() else {
+                return Err("No active session yet; retry once it starts".into());
+            };
+            if s.app_session_id != app_session_id {
+                return Err("No active session yet; retry once it starts".into());
+            }
+            let model = s
+                .model_id
+                .clone()
+                .or_else(|| s.meta.model_id.clone())
+                .filter(|m| !m.trim().is_empty());
+            (
+                s.acp.clone(),
+                s.meta
+                    .agent_session_id
+                    .clone()
+                    .filter(|sid| !sid.is_empty()),
+                model,
+            )
+        };
+        let (Some(acp), Some(agent_sid)) = (acp, agent_sid) else {
+            return Err("No active session yet; retry once it starts".into());
+        };
+        let Some(model_id) = model_id else {
+            return Err("No active model".into());
+        };
+        let stored_provider = crate::store::load_sessions_index()
+            .into_iter()
+            .find(|s| s.id == app_session_id)
+            .and_then(|s| s.provider_id);
+        let provider =
+            stored_provider.unwrap_or_else(|| crate::providers::session_route_provider_id(None));
+        let agent_model = crate::providers::session_set_model_id_for(&provider, &model_id);
+        let catalog = crate::models_catalog::list_available_models();
+        let supported = catalog
+            .models
+            .iter()
+            .find(|m| m.id == agent_model || m.id == model_id)
+            .is_some_and(|m| crate::models_catalog::model_supports_context_window(m, tokens));
+        if !supported {
+            return Err(format!(
+                "model '{agent_model}' does not support context window {tokens}"
+            ));
+        }
+        acp.set_context_window_for(&agent_sid, &agent_model, tokens)
+            .await?;
+        *self.pending_context_window.lock() = None;
+        Ok(())
+    }
+
+    /// Live `x.ai/session/info`. `/context` reads `context` from this object.
+    /// A chat that does not own the live slot has nothing to show.
+    pub async fn session_context_info(
+        &self,
+        session_id: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let Some(app_session_id) = session_id.map(str::trim).filter(|id| !id.is_empty()) else {
+            return Err("No active session".into());
+        };
+        let (acp, agent_sid) = {
+            let guard = self.inner.lock();
+            let Some(s) = guard.as_ref() else {
+                return Err("No active session".into());
+            };
+            if s.app_session_id != app_session_id {
+                return Err("No active session".into());
+            }
+            (
+                s.acp.clone(),
+                s.meta
+                    .agent_session_id
+                    .clone()
+                    .filter(|sid| !sid.is_empty()),
+            )
+        };
+        let (Some(acp), Some(agent_sid)) = (acp, agent_sid) else {
+            return Err("No active session".into());
+        };
+        acp.session_info(&agent_sid).await
     }
 
     /// Apply product mode via session/set_mode; soft-respawn if agent rejects.
@@ -1377,6 +1574,11 @@ mod recycle_tests {
     use super::*;
     use std::time::Instant;
 
+    use crate::journal_throttle::JournalWriteThrottle;
+    use crate::permission::SessionAllowCache;
+    use crate::session_fsm::SessionFsm;
+    use crate::store::SessionMeta;
+
     #[test]
     fn session_is_busy_is_false_when_untracked() {
         let mgr = SessionManager::new();
@@ -1436,5 +1638,409 @@ mod recycle_tests {
             map.get("keep").map(String::as_str),
             Some("permission_policy")
         );
+    }
+
+    #[test]
+    fn set_model_retunes_only_the_live_target_session() {
+        let _lock = crate::paths::APP_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp =
+            std::env::temp_dir().join(format!("grok-app-set-model-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::create_dir_all(&tmp);
+        std::env::set_var("GROK_APP_HOME", &tmp);
+        let _ = crate::paths::ensure_app_dirs();
+
+        let mgr = SessionManager::new();
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.start_connect();
+        let _ = fsm.handshake_ok();
+        let now = Instant::now();
+        *mgr.inner.lock() = Some(LiveSession {
+            app_session_id: "session-1".into(),
+            process_id: "process-1".into(),
+            meta: SessionMeta {
+                id: "session-1".into(),
+                project_id: None,
+                title: "Test".into(),
+                agent_session_id: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                model_id: None,
+                archived: false,
+                pinned: false,
+                effort: None,
+                mode: None,
+                permission_policy: None,
+                json_schema: None,
+                scheduled: false,
+                worktree_path: None,
+                worktree_branch: None,
+                is_worktree_session: false,
+                plugin_dirs: Vec::new(),
+                extra_rules: None,
+                max_agent_turns: None,
+                system_prompt_override: None,
+                fork_agent_session: false,
+                fork_rewind_prompt_index: None,
+                no_ask_user: None,
+                workspace_id: None,
+                workspace_root_snapshot: None,
+                workspace_capability: None,
+                provider_id: None,
+            },
+            fsm,
+            backend: "mock_acp".into(),
+            acp: None,
+            mock_stream: None,
+            streaming_message_id: None,
+            active_turn_id: None,
+            stream_message_id_locked: false,
+            stream_buf: String::new(),
+            stream_thought: String::new(),
+            stream_last_was_assistant: false,
+            stream_attachments: Vec::new(),
+            model_id: None,
+            effort: None,
+            product_mode: None,
+            project_path: None,
+            allow_cache: SessionAllowCache::default(),
+            policy: PermissionPolicy::default(),
+            provider_retry_attempt: 0,
+            provider_retry_aborted: false,
+            last_provider_retry: None,
+            needs_history_bootstrap: false,
+            pending_plan_rpc_id: None,
+            pending_permission_rpc_id: None,
+            pending_permission_options: None,
+            pending_permission_tool_name: None,
+            pending_permission_ui: None,
+            pending_ask_user_rpc_id: None,
+            pending_ask_user_ui: None,
+            last_activity: now,
+            last_stream_progress: now,
+            last_stall_emit: None,
+            stall_soft_emits: 0,
+            journal_throttle: JournalWriteThrottle::with_default_interval(),
+            open_tool_ids: HashSet::new(),
+            open_tool_seen_at: HashMap::new(),
+            terminal_tool_ids: HashSet::new(),
+            deferred_prompt_complete: None,
+            tools_this_turn: 0,
+            saw_model_output: false,
+            prompt_in_flight: false,
+            sent_prompt_this_visit: false,
+            pending_stream_emit: None,
+            stream_emit_flush_gen: 0,
+            last_tool_heartbeat_emit: None,
+        });
+
+        // A model change aimed at another chat (draft, parked, background, or a
+        // scheduled automation's new session before it connects) must not
+        // retune the conversation that happens to be open.
+        tauri::async_runtime::block_on(mgr.set_model("grok-4.6".into(), Some("other-chat")))
+            .expect("non-target apply is a no-op, not an error");
+        // Draft / global scope (no session id) keeps the live agent alone too.
+        tauri::async_runtime::block_on(mgr.set_model("grok-4.6".into(), None))
+            .expect("unscoped apply is a no-op, not an error");
+        {
+            let guard = mgr.inner.lock();
+            let s = guard.as_ref().expect("live session");
+            assert_eq!(s.model_id, None);
+            assert_eq!(s.meta.model_id, None);
+        }
+
+        // The chat that owns the live slot still retunes in place.
+        tauri::async_runtime::block_on(mgr.set_model("grok-4.7".into(), Some("session-1")))
+            .expect("live target applies");
+        {
+            let guard = mgr.inner.lock();
+            let s = guard.as_ref().expect("live session");
+            assert_eq!(s.model_id.as_deref(), Some("grok-4.7"));
+            assert_eq!(s.meta.model_id.as_deref(), Some("grok-4.7"));
+        }
+
+        std::env::remove_var("GROK_APP_HOME");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn ready_session(id: &str, process_id: &str, agent_id: &str, provider_id: &str) -> LiveSession {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.start_connect();
+        let _ = fsm.handshake_ok();
+        let now = Instant::now();
+        LiveSession {
+            app_session_id: id.into(),
+            process_id: process_id.into(),
+            meta: SessionMeta {
+                id: id.into(),
+                project_id: None,
+                title: id.into(),
+                agent_session_id: Some(agent_id.into()),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                model_id: None,
+                archived: false,
+                pinned: false,
+                effort: None,
+                mode: None,
+                permission_policy: None,
+                json_schema: None,
+                scheduled: false,
+                worktree_path: None,
+                worktree_branch: None,
+                is_worktree_session: false,
+                plugin_dirs: Vec::new(),
+                extra_rules: None,
+                max_agent_turns: None,
+                system_prompt_override: None,
+                fork_agent_session: false,
+                fork_rewind_prompt_index: None,
+                no_ask_user: None,
+                workspace_id: None,
+                workspace_root_snapshot: None,
+                workspace_capability: None,
+                provider_id: Some(provider_id.into()),
+            },
+            fsm,
+            backend: "mock_acp".into(),
+            acp: None,
+            mock_stream: None,
+            streaming_message_id: None,
+            active_turn_id: None,
+            stream_message_id_locked: false,
+            stream_buf: String::new(),
+            stream_thought: String::new(),
+            stream_last_was_assistant: false,
+            stream_attachments: Vec::new(),
+            model_id: None,
+            effort: None,
+            product_mode: None,
+            project_path: None,
+            allow_cache: SessionAllowCache::default(),
+            policy: PermissionPolicy::default(),
+            provider_retry_attempt: 0,
+            provider_retry_aborted: false,
+            last_provider_retry: None,
+            needs_history_bootstrap: false,
+            pending_plan_rpc_id: None,
+            pending_permission_rpc_id: None,
+            pending_permission_options: None,
+            pending_permission_tool_name: None,
+            pending_permission_ui: None,
+            pending_ask_user_rpc_id: None,
+            pending_ask_user_ui: None,
+            last_activity: now,
+            last_stream_progress: now,
+            last_stall_emit: None,
+            stall_soft_emits: 0,
+            journal_throttle: JournalWriteThrottle::with_default_interval(),
+            open_tool_ids: HashSet::new(),
+            open_tool_seen_at: HashMap::new(),
+            terminal_tool_ids: HashSet::new(),
+            deferred_prompt_complete: None,
+            tools_this_turn: 0,
+            saw_model_output: false,
+            prompt_in_flight: false,
+            sent_prompt_this_visit: false,
+            pending_stream_emit: None,
+            stream_emit_flush_gen: 0,
+            last_tool_heartbeat_emit: None,
+        }
+    }
+
+    fn seed_official_and_custom(mgr: &SessionManager, custom_is_live: bool) {
+        let official = ready_session("sess-a", "proc-a", "agent-a", "official");
+        let custom = ready_session("sess-b", "proc-b", "agent-b", "relay-b");
+        crate::store::save_sessions_index(&[official.meta.clone(), custom.meta.clone()])
+            .expect("seed sessions");
+        if custom_is_live {
+            *mgr.inner.lock() = Some(custom);
+            mgr.background.lock().insert("sess-a".into(), official);
+        } else {
+            *mgr.inner.lock() = Some(official);
+            mgr.background.lock().insert("sess-b".into(), custom);
+        }
+        *mgr.prewarm.lock() = PrewarmState::Spawning {
+            since: Instant::now(),
+        };
+    }
+
+    fn assert_disk_agent_ids(official_kept: &str) {
+        let rows = crate::store::load_sessions_index();
+        let official = rows
+            .iter()
+            .find(|s| s.id == "sess-a")
+            .expect("official row");
+        let custom = rows.iter().find(|s| s.id == "sess-b").expect("custom row");
+        assert_eq!(official.agent_session_id.as_deref(), Some(official_kept));
+        assert_eq!(official.provider_id.as_deref(), Some("official"));
+        assert!(custom.agent_session_id.is_none());
+        assert_eq!(custom.provider_id.as_deref(), Some("relay-b"));
+    }
+
+    #[test]
+    fn switching_custom_chat_leaves_official_process_and_clears_custom_id() {
+        let _lock = crate::paths::APP_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp = std::env::temp_dir().join(format!(
+            "grok-app-provider-switch-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("temp home");
+        let previous = std::env::var_os("GROK_APP_HOME");
+        std::env::set_var("GROK_APP_HOME", &tmp);
+        let _ = crate::paths::ensure_app_dirs();
+
+        // B (custom) is background. Switching it drops only B.
+        // A (official) keeps its live process and CLI session id.
+        let mgr = SessionManager::new();
+        seed_official_and_custom(&mgr, false);
+        tauri::async_runtime::block_on(mgr.invalidate_spawn_flags_inner(
+            None,
+            "sess-b",
+            "session_provider",
+        ));
+        {
+            let guard = mgr.inner.lock();
+            let official = guard.as_ref().expect("official stays live");
+            assert_eq!(official.app_session_id, "sess-a");
+            assert_eq!(official.process_id, "proc-a");
+            assert_eq!(official.meta.agent_session_id.as_deref(), Some("agent-a"));
+            assert_eq!(official.meta.provider_id.as_deref(), Some("official"));
+        }
+        assert!(mgr.background.lock().get("sess-b").is_none());
+        assert!(mgr.parked.lock().is_empty());
+        assert!(matches!(*mgr.prewarm.lock(), PrewarmState::Spawning { .. }));
+        assert_disk_agent_ids("agent-a");
+
+        // B (custom) is the live chat being switched. A stays in the background
+        // with the same process and CLI session id. B's resume id is cleared.
+        let mgr = SessionManager::new();
+        seed_official_and_custom(&mgr, true);
+        tauri::async_runtime::block_on(mgr.invalidate_spawn_flags_inner(
+            None,
+            "sess-b",
+            "session_provider",
+        ));
+        {
+            let guard = mgr.inner.lock();
+            let custom = guard.as_ref().expect("custom stays the live slot");
+            assert_eq!(custom.app_session_id, "sess-b");
+            assert!(custom.meta.agent_session_id.is_none());
+            assert_eq!(custom.meta.provider_id.as_deref(), Some("relay-b"));
+        }
+        {
+            let bg = mgr.background.lock();
+            let official = bg.get("sess-a").expect("official process stays");
+            assert_eq!(official.process_id, "proc-a");
+            assert_eq!(official.meta.agent_session_id.as_deref(), Some("agent-a"));
+            assert_eq!(official.meta.provider_id.as_deref(), Some("official"));
+        }
+        assert!(matches!(*mgr.prewarm.lock(), PrewarmState::Spawning { .. }));
+        assert!(!mgr.pending_soft_respawn.lock().contains_key("sess-a"));
+        assert_disk_agent_ids("agent-a");
+
+        match previous {
+            Some(value) => std::env::set_var("GROK_APP_HOME", value),
+            None => std::env::remove_var("GROK_APP_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn empty_stored_provider_matching_global_route_keeps_process_and_resume_id() {
+        let _lock = crate::paths::APP_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp = std::env::temp_dir().join(format!(
+            "grok-app-empty-provider-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("temp home");
+        let previous = std::env::var_os("GROK_APP_HOME");
+        std::env::set_var("GROK_APP_HOME", &tmp);
+        let _ = crate::paths::ensure_app_dirs();
+
+        // No custom default in this home, so an empty provider follows official.
+        assert_eq!(
+            crate::providers::session_route_provider_id(None),
+            crate::providers::SESSION_PROVIDER_OFFICIAL
+        );
+        assert_eq!(
+            crate::providers::session_provider_pick(false, Some(""), Some("official")),
+            crate::providers::SessionProviderPick::SameRoute
+        );
+        let mgr = SessionManager::new();
+        let mut background = ready_session("sess-a", "proc-a", "agent-a", "official");
+        background.meta.provider_id = None;
+        crate::store::save_sessions_index(&[background.meta.clone()]).expect("seed");
+        mgr.background.lock().insert("sess-a".into(), background);
+        *mgr.prewarm.lock() = PrewarmState::Spawning {
+            since: Instant::now(),
+        };
+
+        let route_changed = matches!(
+            crate::providers::session_provider_pick(false, None, Some("official")),
+            crate::providers::SessionProviderPick::RouteChanged
+        );
+        assert!(
+            !route_changed,
+            "writing the global route onto an empty provider is not a switch"
+        );
+        if route_changed {
+            tauri::async_runtime::block_on(mgr.invalidate_spawn_flags_inner(
+                None,
+                "sess-a",
+                "session_provider",
+            ));
+        }
+        {
+            let bg = mgr.background.lock();
+            let kept = bg.get("sess-a").expect("process slot stays");
+            assert_eq!(kept.process_id, "proc-a");
+            assert_eq!(kept.meta.agent_session_id.as_deref(), Some("agent-a"));
+        }
+        let row = crate::store::load_sessions_index()
+            .into_iter()
+            .find(|s| s.id == "sess-a")
+            .expect("row");
+        assert_eq!(row.agent_session_id.as_deref(), Some("agent-a"));
+        assert!(row.provider_id.is_none());
+        assert!(matches!(*mgr.prewarm.lock(), PrewarmState::Spawning { .. }));
+
+        assert_eq!(
+            crate::providers::session_provider_pick(false, None, Some("relay-b")),
+            crate::providers::SessionProviderPick::RouteChanged
+        );
+        tauri::async_runtime::block_on(mgr.invalidate_spawn_flags_inner(
+            None,
+            "sess-a",
+            "session_provider",
+        ));
+        assert!(mgr.background.lock().get("sess-a").is_none());
+        let row = crate::store::load_sessions_index()
+            .into_iter()
+            .find(|s| s.id == "sess-a")
+            .expect("row");
+        assert!(row.agent_session_id.is_none());
+
+        match previous {
+            Some(value) => std::env::set_var("GROK_APP_HOME", value),
+            None => std::env::remove_var("GROK_APP_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -37,6 +37,8 @@ pub(super) enum StallTickAction {
         tier: StallTier,
         saw_model_output: bool,
         saw_tool_activity: bool,
+        /// This turn already saw a body-decode `retry_state`. Copy only.
+        stream_interrupted: bool,
     },
 }
 
@@ -103,6 +105,16 @@ pub struct SessionSnapshot {
     pub model_id: Option<String>,
     pub project_path: Option<String>,
     pub title: String,
+}
+
+/// `session_stop_report`: the usual snapshot, plus whether `session/cancel`
+/// reached the agent. Ready is already published when this returns. A cancel
+/// error keeps `Ok` and sets `cancel_delivered` false — the host does not recycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StopReport {
+    pub snapshot: SessionSnapshot,
+    pub cancel_delivered: bool,
 }
 
 /// One user-prompt checkpoint for the rewind timeline UI.
@@ -200,6 +212,12 @@ pub(crate) struct LiveSession {
     pub(super) provider_retry_attempt: u32,
     /// Host already aborted this turn after max retries (avoid double cancel).
     pub(super) provider_retry_aborted: bool,
+    /// Latest body-decode `retry_state` this turn (`Instant`, reason).
+    ///
+    /// Sticky across later tokens and tools — a short recovery followed by
+    /// silence is the hung-stream shape. Cleared only when the turn resets.
+    /// Stall copy only; never feeds [`crate::acp_client::should_abort_provider_retry_ex`].
+    pub(super) last_provider_retry: Option<(Instant, String)>,
     /// After session/new (load failed), first prompt should carry journal history.
     pub(super) needs_history_bootstrap: bool,
     /// Pending `_x.ai/exit_plan_mode` JSON-RPC id awaiting user Approve / revise.
@@ -1833,7 +1851,7 @@ pub(super) fn append_journal_attachment_refs(
         .filter_map(|l| {
             l.trim()
                 .strip_prefix('@')
-                .map(|p| p.trim().to_string())
+                .map(|p| journal_attachment_path_key(p.trim()))
                 .filter(|p| !p.is_empty())
         })
         .collect();
@@ -1841,7 +1859,8 @@ pub(super) fn append_journal_attachment_refs(
     let mut new_refs: Vec<String> = Vec::new();
     for a in atts {
         let path = a.path.trim();
-        if path.is_empty() || !existing.insert(path.to_string()) {
+        let key = journal_attachment_path_key(path);
+        if path.is_empty() || key.is_empty() || !existing.insert(key) {
             continue;
         }
         new_refs.push(format!("@{path}"));
@@ -1857,6 +1876,18 @@ pub(super) fn append_journal_attachment_refs(
     }
     lines.extend(refs);
     lines.join("\n")
+}
+
+/// `C:\…` and `C:/…` are one file. Other paths stay as written.
+fn journal_attachment_path_key(path: &str) -> String {
+    let t = path.trim();
+    let b = t.as_bytes();
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/')
+    {
+        t.replace('\\', "/")
+    } else {
+        t.to_string()
+    }
 }
 
 /// Result of taking agent processes out of live / background / parked / prewarm maps.
@@ -2036,6 +2067,14 @@ mod journal_attach_tests {
             &[att("/tmp/shot.png")],
         );
         assert_eq!(out, "body\n\n@/goal keep me\n\n@/tmp/shot.png");
+    }
+
+    #[test]
+    fn append_collapses_windows_slash_variants() {
+        let once = append_journal_attachment_refs("hello".into(), &[att(r"C:\Users\me\paste.png")]);
+        let twice = append_journal_attachment_refs(once.clone(), &[att("C:/Users/me/paste.png")]);
+        assert_eq!(once, twice);
+        assert_eq!(once.matches("paste.png").count(), 1);
     }
 }
 

@@ -11,6 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useThemeShell } from "@/providers/ThemeShellContext";
+import { useSshWatch } from "@/providers/SshWatchProvider";
 import { usePetCompanion } from "@/hooks/usePetCompanion";
 import { useFloatingMenu } from "@/lib/floatingMenu";
 import { restoreSessionGate } from "@/lib/sessionGateRestore";
@@ -48,7 +49,7 @@ import {
   shouldSkipHtml5AfterNative,
 } from "@/lib/fileDrop";
 import { writeOpenTargetStorage } from "@/lib/openEditorHonesty";
-import { buildContinueAgentPrompt } from "@/lib/continueInterruptedTurn";
+import { useEndAndContinue } from "@/hooks/useEndAndContinue";
 import {
   APP_CLOSE_REQUESTED_EVENT,
   loadAlwaysQuitWithoutAskingPref,
@@ -101,12 +102,12 @@ import {
   applyTurnError,
   applyTurnMarker,
   canSend,
+  canStop,
   canType,
   isSessionLiveStreaming,
   presentErrorBanner,
   type ErrorBannerView,
   weaveToolsIntoAssistantSegments,
-  truncateBeforeLastUser,
   truncateThroughUserPrompt,
   resolveRewindKeepForUserMessage,
   canRegenerateAssistant,
@@ -119,6 +120,7 @@ import {
 } from "@/lib/session";
 import {
   INITIAL_CONTEXT_USAGE,
+  formatTokenCount,
   resolveContextUsageDisplay,
   type ContextUsageState,
 } from "@/lib/contextUsage";
@@ -170,8 +172,12 @@ import {
   resolveGoalOrchSessionIndicator,
   shouldConfirmClearGoalOrch,
 } from "@/lib/goalOrch";
+import { sessionGoalClear } from "@/lib/goalClear";
 import * as api from "@/lib/api";
-import { queueComposerPreferenceApply } from "@/lib/composerPrefsBarrier";
+import {
+  liveHostAfterProviderSwitch,
+  queueComposerPreferenceApply,
+} from "@/lib/composerPrefsBarrier";
 import {
   isDangerousSandboxProfile,
   normalizeSandboxProfile,
@@ -231,6 +237,14 @@ import {
   type Locale,
   type LocalePreference,
 } from "@/i18n";
+import { resolveComposerPrefsSelection } from "@/lib/composerPrefsApply";
+import {
+  messagesAfterEditResend,
+  optimisticLiveHostForEditResend,
+  restoreOptimisticLiveHost,
+  shellAfterEditResendStart,
+  shellReadyAfterRewindFailure,
+} from "@/lib/editResendState";
 import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL_ID,
@@ -358,7 +372,7 @@ import {
   applySkillAtSlash,
   isDraftEmpty,
   detectSlashRangeOnStored,
-  parseStoredContent,
+  parseStoredContent, parseStoredContentWithRefs,
   serializeForAgent,
 } from "@/lib/draftDoc";
 import {
@@ -402,6 +416,7 @@ import {
 } from "@/lib/composerProjectDraft";
 import {
   loadComposerSessionDraft,
+  restoredComposerGoalMode,
   saveComposerSessionDraft,
 } from "@/lib/composerSessionDraft";
 import {
@@ -435,6 +450,16 @@ import {
   flattenFilteredCatalog,
   type SlashItem,
 } from "@/lib/slashCatalog";
+import { parseContextInfoPayload } from "@/lib/contextInfoSnapshot";
+import {
+  contextWindowSlashFeedback,
+  leftoverContextWindowArgs,
+  positiveContextWindows,
+  resolveContextWindowCommand,
+  formatWindowLabel,
+  selectableContextWindows,
+  stripContextWindowSlashFromDraft,
+} from "@/lib/contextWindowCommand";
 import {
   leftoverWorkflowArgs,
   resolveWorkflowSlashAction,
@@ -461,7 +486,8 @@ import {
   requestComposerStoredCaret,
   resizeComposerInput,
   serializeDom,
-} from "@/components/ComposerEditor";
+} from "@/components/composer";
+import { useApplyAtFile } from "@/hooks/useApplyAtFile";
 
 import {
   pathsEqual,
@@ -484,6 +510,7 @@ import {
   canRestoreCodeOnResume,
 } from "@/lib/sessionResumeRestore";
 import {
+  hideSshProjectInLocalTree,
   isProjectFolderMissing,
   isProjectWarmable,
 } from "@/lib/projectPath";
@@ -643,6 +670,7 @@ import type { ContextMenuState } from "@/lib/app/appDialogTypes";
 import { useSessionRuntime } from "@/hooks/useSessionRuntime";
 import { sessionTranscriptStore } from "@/lib/sessionTranscriptStore";
 import { useSessionConnect, createSessionConnectHost } from "@/hooks/useSessionConnect";
+import { useSessionProviderChip } from "@/hooks/useSessionProviderChip";
 import {
   createGitWorktreeChromeHost,
   useGitWorktreeChrome,
@@ -1033,6 +1061,8 @@ export function AppWorkbench() {
     slashKindFilter,
     setSlashKindFilter,
     liveAt,
+    reportAtQuery,
+    onSlashQueryChange,
     setLiveAt,
     liveAtRef,
     atDismissedSigRef,
@@ -1136,6 +1166,7 @@ export function AppWorkbench() {
   projectsRef.current = projects;
   const projectSpaces = useProjectSpaces();
   const visibleProjects = projectSpaces.visibleProjects(projects);
+  const { watchAliases } = useSshWatch();
   const {
     sessions,
     setSessions,
@@ -1875,7 +1906,9 @@ export function AppWorkbench() {
     workflowsEnabled,
     setWorkflowsEnabled,
     planEnabled,
+    composerEditor,
     setPlanEnabled,
+    setComposerEditor,
     todoGateEnabled,
     setTodoGateEnabled,
     todoGateMaxFiresPerPrompt,
@@ -1941,6 +1974,10 @@ export function AppWorkbench() {
     voiceDictationAutoSendRef,
     setDraft,
     sessionState: session.state,
+    dictationTarget: {
+      sessionId: viewingSessionIdRef.current ?? session.sessionId,
+      projectKey: projectDraftKey(activeProject?.id ?? null),
+    },
     refreshSessions,
     sttEngine,
     sttCustomBaseUrl,
@@ -2345,22 +2382,17 @@ export function AppWorkbench() {
     };
   }, []);
 
+  const sessionProviderChip = useSessionProviderChip();
+
   const applyComposerPrefs = useCallback(
     (prefs: api.ComposerPrefs, catalog: ModelOption[]) => {
-      const models = catalog.length > 0 ? catalog : GROK_BUILD_MODELS;
-      let nextModelId: string;
-      if (prefs.modelId && isValidModelId(prefs.modelId, models)) {
-        nextModelId = prefs.modelId;
-      } else {
-        nextModelId = pickDefaultModelId(models);
-      }
-      setModelId(nextModelId);
-      const model = findModel(nextModelId, models);
-      setEffort(
-        isValidEffort(prefs.effort, model)
-          ? prefs.effort
-          : pickDefaultEffort(model),
-      );
+      const next = resolveComposerPrefsSelection({
+        prefs,
+        catalog,
+        providers: sessionProviderChip.providersSnapshot(),
+      });
+      setModelId(next.modelId);
+      setEffort(next.effort);
       setMode(prefs.mode || "agent");
       setPolicy(
         isValidPolicy(prefs.permissionPolicy) ? prefs.permissionPolicy : "ask",
@@ -2369,7 +2401,7 @@ export function AppWorkbench() {
         setPrefsScope(prefs.scope);
       }
     },
-    [],
+    [sessionProviderChip],
   );
 
   const refreshLists = useCallback(async () => {
@@ -2415,6 +2447,7 @@ export function AppWorkbench() {
                 source: m.source,
                 isDefault: m.isDefault,
                 contextWindow: m.contextWindow ?? null,
+                contextWindows: positiveContextWindows(m.contextWindows),
               }))
             : GROK_BUILD_MODELS;
         setAvailableModels(catalog);
@@ -2583,6 +2616,7 @@ export function AppWorkbench() {
                 isDefault: m.isDefault,
                 reasoningEfforts: efforts,
                 contextWindow: m.contextWindow ?? null,
+                contextWindows: positiveContextWindows(m.contextWindows),
               };
             })
           : GROK_BUILD_MODELS;
@@ -2766,17 +2800,35 @@ export function AppWorkbench() {
   useEffect(() => {
     if (!api.isTauri()) return;
     let cancelled = false;
-    void api
-      .composerPrefsResolve({
-        projectId: activeProject?.id ?? null,
-        sessionId: session.sessionId ?? null,
-      })
-      .then((prefs) => {
-        if (!cancelled) applyComposerPrefs(prefs, availableModels);
-      })
-      .catch(() => {});
+    const run = () => {
+      void api
+        .composerPrefsResolve({
+          projectId: activeProject?.id ?? null,
+          sessionId: session.sessionId ?? null,
+        })
+        .then((prefs) => {
+          if (cancelled) return;
+          applyComposerPrefs(prefs, availableModels);
+          if (session.sessionId) {
+            sessionProviderChip.draftComposerRouteRef.current = null;
+          }
+          const stored = prefs.providerId?.trim() ?? "";
+          const draft = sessionProviderChip.draftComposerRouteRef.current;
+          if (stored) {
+            sessionProviderChip.paint(stored);
+          } else if (session.sessionId || !draft) {
+            sessionProviderChip.paint(null);
+          } else {
+            sessionProviderChip.paint(draft.providerId);
+          }
+        })
+        .catch(() => {});
+    };
+    sessionProviderChip.setAfterProviderList(run);
+    run();
     return () => {
       cancelled = true;
+      sessionProviderChip.setAfterProviderList(null);
     };
   }, [
     activeProject?.id,
@@ -2784,6 +2836,7 @@ export function AppWorkbench() {
     prefsScope,
     applyComposerPrefs,
     availableModels,
+    sessionProviderChip,
   ]);
 
   // Prompt history browse is per viewed session — leave browse mode on switch / new chat.
@@ -3156,6 +3209,8 @@ export function AppWorkbench() {
     connectHost.sendInFlightBySessionRef = sendInFlightBySessionRef;
     connectHost.sendEpochBySessionRef = sendEpochBySessionRef;
     connectHost.sessionJsonSchemaRef = sessionJsonSchemaRef;
+    connectHost.draftComposerRouteRef =
+      sessionProviderChip.draftComposerRouteRef;
     connectHost.currentViewFocus = currentViewFocus;
     connectHost.syncViewedTurnClock = syncViewedTurnClock;
     connectHost.setLocalError = setLocalError;
@@ -3249,15 +3304,13 @@ export function AppWorkbench() {
         setAttachments(saved.attachments ?? []);
         setChatAttachments(saved.chatAttachments ?? []);
         setQuotes(saved.quotes ?? []);
-        if (typeof saved.goalMode === "boolean") {
-          setGoalMode(saved.goalMode);
-        }
       } else {
         setDraft("");
         setAttachments([]);
         setChatAttachments([]);
         setQuotes([]);
       }
+      setGoalMode(restoredComposerGoalMode(saved));
       requestAnimationFrame(() => {
         suppressProjectDraftPersistRef.current = false;
       });
@@ -3491,15 +3544,13 @@ export function AppWorkbench() {
         setAttachments(saved.attachments ?? []);
         setChatAttachments(saved.chatAttachments ?? []);
         setQuotes(saved.quotes ?? []);
-        if (typeof saved.goalMode === "boolean") {
-          setGoalMode(saved.goalMode);
-        }
       } else {
         setDraft("");
         setAttachments([]);
         setChatAttachments([]);
         setQuotes([]);
       }
+      setGoalMode(restoredComposerGoalMode(saved));
       // Allow debounced persist again after React commits the load.
       requestAnimationFrame(() => {
         suppressProjectDraftPersistRef.current = false;
@@ -3785,11 +3836,24 @@ export function AppWorkbench() {
       navSessionIds({
         sessions,
         projects,
+        // Mirror the tree's project set — sessions of space-filtered or
+        // SSH-watched projects are not rendered, so j/k must skip them too.
+        visibleProjects: visibleProjects.filter(
+          (p) => !hideSshProjectInLocalTree(p, watchAliases),
+        ),
         projectsOpen,
         historyOpen,
         expandedProjects,
       }),
-    [projectsOpen, projects, expandedProjects, sessions, historyOpen],
+    [
+      projectsOpen,
+      projects,
+      visibleProjects,
+      watchAliases,
+      expandedProjects,
+      sessions,
+      historyOpen,
+    ],
   );
   sidebarNavIdsRef.current = sidebarNavSessionIds;
   sidebarNavCurrentIdRef.current =
@@ -5560,13 +5624,22 @@ export function AppWorkbench() {
     session.state !== "streaming" &&
     session.state !== "awaiting_permission";
 
-  /** Idle-ish: allow fork / rewind from transcript (not mid-turn). */
+  /** Idle gate for fork / duplicate. Rewind itself is also allowed mid-turn. */
   const canRewindSession =
     canSend(session.state) &&
     !connecting &&
     !editSubmitting &&
     !rewindBusy;
+  const canRewindNow =
+    canRewindSession ||
+    (canStop(session.state) && !connecting && !editSubmitting && !rewindBusy);
 
+  useEffect(() => {
+    sessionGoalClear.flush(session.sessionId, session.state);
+  }, [session.sessionId, session.state]);
+
+  const contextWindowSlashRef = useRef<(args: string) => void>(() => {});
+  const contextSlashRef = useRef<(announce: boolean) => void>(() => {});
   const {
     executeSend,
     send,
@@ -5621,6 +5694,12 @@ export function AppWorkbench() {
     getDraft,
     requestComposerFocus,
     openWorkflowsSettings,
+    onContextWindowSlash: (args) => {
+      contextWindowSlashRef.current(args);
+    },
+    onContextSlash: () => {
+      contextSlashRef.current(true);
+    },
     applySessionTitle,
     restartTurnClock,
     syncViewedTurnClock,
@@ -5872,25 +5951,6 @@ export function AppWorkbench() {
     }
     setSlashActiveIndex(0);
   }, []);
-
-  /** Stable slash-query setter: skip no-op updates so filter effects don't thrash. */
-  const onSlashQueryChange = useCallback(
-    (q: { start: number; query: string; end: number } | null) => {
-      setSlashQuery((prev) => {
-        if (q == null) return prev == null ? prev : null;
-        if (
-          prev &&
-          prev.start === q.start &&
-          prev.query === q.query &&
-          prev.end === q.end
-        ) {
-          return prev;
-        }
-        return q;
-      });
-    },
-    [],
-  );
 
   /**
    * Composer right-click menu (Paste + Command panel). Same ContextMenu
@@ -6486,30 +6546,15 @@ export function AppWorkbench() {
     setAtLoading(false);
   }, []);
 
-  const applyAtFile = useCallback(
-    (entry: ComposerAtFileEntry) => {
-      const live = liveAtRef.current;
-      if (live.present) {
-        setDraft((d) => removeAtTokenFromDraft(d, live.start, live.end));
-      }
-      const cleared = { present: false, query: "", start: 0, end: 0 };
-      liveAtRef.current = cleared;
-      setLiveAt(cleared);
-      setAtEntries([]);
-      setAtSoftFail(null);
-      setAttachments((prev) =>
-        mergeAttachments(prev, [
-          {
-            path: entry.path,
-            name: entry.name || entry.path.split(/[/\\]/).pop() || entry.path,
-            isDir: !!entry.isDir,
-          },
-        ]),
-      );
-      requestComposerFocus();
-    },
-    [requestComposerFocus],
-  );
+  const applyAtFile = useApplyAtFile({
+    liveAtRef,
+    clearAtState: closeAtMenu,
+    removeAtTokenFromDraft,
+    editorRef: composerInputRef,
+    setDraft,
+    setAttachments,
+    focus: requestComposerFocus,
+  });
 
   // Debounced project file search for @ panel.
   useEffect(() => {
@@ -7519,7 +7564,7 @@ export function AppWorkbench() {
         return;
       }
       const quotesForGuide = item.quotes ?? [];
-      const segments = parseStoredContent(item.storedDisplay);
+      const segments = parseStoredContentWithRefs(item.storedDisplay);
       const agentBody = serializeQuotesForAgent(
         quotesForGuide,
         serializeForAgent(segments, { goalMode: item.goalMode }),
@@ -8345,7 +8390,7 @@ export function AppWorkbench() {
         showToast(msg);
         return;
       }
-      if (!canRewindSession) {
+      if (!canRewindNow) {
         const msg = tr("session.rewindBusy");
         setRewindError(msg);
         showToast(msg);
@@ -8412,7 +8457,7 @@ export function AppWorkbench() {
     },
     // ensureConnected / refreshSessions via closure
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyRewindComposerRestore, captureRewindComposerRestore, canRewindSession, session.sessionId, session.state, showToast, tr],
+    [applyRewindComposerRestore, captureRewindComposerRestore, canRewindNow, session.sessionId, session.state, showToast, tr],
   );
 
   const runRewindDropLastUser = useCallback(
@@ -8423,7 +8468,7 @@ export function AppWorkbench() {
         showToast(msg);
         return;
       }
-      if (!canRewindSession) {
+      if (!canRewindNow) {
         const msg = tr("session.rewindBusy");
         setRewindError(msg);
         showToast(msg);
@@ -8470,7 +8515,7 @@ export function AppWorkbench() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyRewindComposerRestore, captureRewindComposerRestore, canRewindSession, session.sessionId, session.state, showToast, tr],
+    [applyRewindComposerRestore, captureRewindComposerRestore, canRewindNow, session.sessionId, session.state, showToast, tr],
   );
 
   const confirmRewindToPrompt = useCallback(
@@ -8497,7 +8542,7 @@ export function AppWorkbench() {
         showToast(tr("error.needTauri"));
         return;
       }
-      if (!canRewindSession) {
+      if (!canRewindNow) {
         showToast(tr("session.rewindBusy"));
         return;
       }
@@ -8535,7 +8580,7 @@ export function AppWorkbench() {
         showToast(tr("session.rewindFailed") + ": " + String(e), 4500);
       }
     },
-    [canRewindSession, showToast, tr],
+    [canRewindNow, showToast, tr],
   );
 
   const onRewindToUserMessage = useCallback(
@@ -8545,7 +8590,7 @@ export function AppWorkbench() {
         showToast(tr("session.rewindFailed"));
         return;
       }
-      if (!canRewindSession) {
+      if (!canRewindNow) {
         showToast(tr("session.rewindBusy"));
         return;
       }
@@ -8572,7 +8617,7 @@ export function AppWorkbench() {
       });
     },
     [
-      canRewindSession,
+      canRewindNow,
       confirmRewindToPrompt,
       messages,
       session.sessionId,
@@ -8783,6 +8828,36 @@ export function AppWorkbench() {
         return;
       }
 
+      if (item.kind === "action" && item.action === "context-window") {
+        const stored = getDraft();
+        const leftover = q ? leftoverContextWindowArgs(stored, q.end) : "";
+        if (q) {
+          setDraft((d) =>
+            stripContextWindowSlashFromDraft(d, q.start, q.end),
+          );
+          requestComposerStoredCaret(q.start);
+        }
+        const fromQuery = (q?.query ?? "")
+          .replace(/^context-window\s*/i, "")
+          .trim();
+        contextWindowSlashRef.current(leftover || fromQuery);
+        return;
+      }
+
+      if (item.kind === "action" && item.action === "context") {
+        if (q) {
+          const stored = getDraft();
+          const lineEnd = stored.slice(q.end).search(/[\r\n]/);
+          const cut = lineEnd === -1 ? stored.length : q.end + lineEnd;
+          setDraft((d) =>
+            (d.slice(0, q.start) + d.slice(cut)).replace(/[ \t]+$/u, ""),
+          );
+          requestComposerStoredCaret(q.start);
+        }
+        contextSlashRef.current(true);
+        return;
+      }
+
       if (item.kind === "skill" || item.kind === "plugin") {
         const applyAtSlash =
           item.kind === "plugin" ? applyPluginAtSlash : applySkillAtSlash;
@@ -8918,6 +8993,10 @@ export function AppWorkbench() {
           }
           case "goal-clear":
             setGoalMode(false);
+            sessionGoalClear.arm(
+              viewingSessionIdRef.current ?? session.sessionId,
+              session.state,
+            );
             return;
           default:
             return;
@@ -9049,6 +9128,10 @@ export function AppWorkbench() {
   // welcome logo paints immediately — the SVG itself is inline, not a fetch.
   const [cachedBrandKind, setCachedBrandKind] =
     useState<SuperGrokBrandKind | null>(() => loadCachedSuperGrokBrand());
+  /** Window picked on the new-chat composer, before a chat row exists. */
+  const [draftContextWindow, setDraftContextWindow] = useState<number | null>(
+    null,
+  );
   /** Active inference channel: custom relay identity replaces official account chrome. */
   const [activeCustomProvider, setActiveCustomProvider] =
     useState<api.CustomProvider | null>(null);
@@ -9068,13 +9151,18 @@ export function AppWorkbench() {
         modelId,
         models: availableModels,
         // Prefer live agent occupancy denominator (Grok Build 1.0 → 500k).
-        agentContextWindow: contextUsage.agentContextWindow,
+        // A new chat has no agent yet; the draft choice is what the menu shows.
+        agentContextWindow:
+          contextUsage.agentContextWindow ??
+          (session.sessionId ? null : draftContextWindow),
       }),
     [
       activeCustomProvider,
       modelId,
       availableModels,
       contextUsage.agentContextWindow,
+      draftContextWindow,
+      session.sessionId,
     ],
   );
   useEffect(() => {
@@ -9112,6 +9200,9 @@ export function AppWorkbench() {
                   m.contextWindow != null && m.contextWindow > 0
                     ? m.contextWindow
                     : (prior?.contextWindow ?? null),
+                contextWindows:
+                  positiveContextWindows(m.contextWindows) ??
+                  prior?.contextWindows,
               };
             });
           });
@@ -9120,16 +9211,19 @@ export function AppWorkbench() {
     }
   }, [session.state, session.sessionId]);
   /** Context usage chip label/state from compact events + message estimate. */
-  const contextUsageDisplay = useMemo(
-    () =>
-      resolveContextUsageDisplay(
-        contextUsage,
-        messages,
-        locale,
-        currentModelWindow,
-      ),
-    [contextUsage, messages, locale, currentModelWindow],
-  );
+  const contextUsageDisplay = useMemo(() => {
+    const base = resolveContextUsageDisplay(
+      contextUsage,
+      messages,
+      locale,
+      currentModelWindow,
+    );
+    return {
+      ...base,
+      contextInfo: contextUsage.contextInfo ?? null,
+      contextInfoNonce: contextUsage.contextInfoNonce ?? 0,
+    };
+  }, [contextUsage, messages, locale, currentModelWindow]);
   const sessionSpend = useSessionSpend(session.sessionId);
   /** Full provider list for composer model menu groups. */
   const [customProviders, setCustomProviders] = useState<api.CustomProvider[]>(
@@ -9139,6 +9233,7 @@ export function AppWorkbench() {
     useState<string>("official");
   const [providerActiveId, setProviderActiveId] = useState<string | null>(null);
   const [modelPickBusy, setModelPickBusy] = useState(false);
+  const modelPickBusyRef = useRef(false);
   const customRouteActive = activeCustomProvider != null;
   const composerProviderInputs = useMemo(
     () =>
@@ -9155,28 +9250,25 @@ export function AppWorkbench() {
       })),
     [customProviders],
   );
+  sessionProviderChip.bind({
+    setProviderActiveSource,
+    setProviderActiveId,
+    setActiveCustomProvider,
+  });
   const refreshProviderRoute = useCallback(async () => {
     if (!api.isTauri()) {
-      setActiveCustomProvider(null);
+      sessionProviderChip.noteProviderList(null);
       setCustomProviders([]);
-      setProviderActiveSource("official");
-      setProviderActiveId(null);
       return;
     }
     try {
       const list = await api.providersList();
       setCustomProviders(list.providers);
-      setProviderActiveSource(list.activeSource);
-      setProviderActiveId(list.activeProviderId);
-      const active =
-        list.activeSource === "custom"
-          ? list.providers.find((provider) => provider.id === list.activeProviderId) ?? null
-          : null;
-      setActiveCustomProvider(active);
+      sessionProviderChip.noteProviderList(list);
     } catch {
       /* keep previous */
     }
-  }, []);
+  }, [sessionProviderChip]);
   useEffect(() => {
     void refreshProviderRoute();
   }, [refreshProviderRoute]);
@@ -9355,115 +9447,95 @@ export function AppWorkbench() {
 
   const handleModelPick = useCallback(
     async (pick: ComposerModelPick) => {
-      if (modelPickBusy) return;
+      if (modelPickBusyRef.current) return;
+      modelPickBusyRef.current = true;
       setModelPickBusy(true);
       try {
+        const providerId =
+          pick.kind === "official" ? "official" : pick.providerId;
+        let nextEfforts = officialEffortCatalog;
         if (pick.kind === "official") {
-          if (providerActiveSource === "custom" && api.isTauri()) {
-            await api.providersActivate("official");
-            await refreshProviderRoute();
-          }
           if (!isValidModelId(pick.modelId, availableModels)) return;
-          setModelId(pick.modelId);
-          const targetOfficial = effortCatalogForRoute({
+          nextEfforts = effortCatalogForRoute({
             model: findModel(pick.modelId, availableModels),
           });
-          const clampedOfficial = mapEffortToTargetCatalog(
-            effort,
-            targetOfficial,
-            channelEffortOptions ?? officialEffortCatalog,
-          );
-          setEffort(clampedOfficial);
-          void api
-            .composerPrefsSet({
-              projectId: activeProject?.id ?? null,
-              sessionId: session.sessionId ?? null,
-              modelId: pick.modelId,
-              effort: clampedOfficial,
-            })
-            .catch((e) => showToast(String(e), 4000));
         } else {
           if (!api.isTauri()) return;
-          const provider = customProviders.find(
-            (p) => p.id === pick.providerId,
-          );
+          const provider = customProviders.find((p) => p.id === pick.providerId);
           if (!provider) {
             showToast(tr("prov.err.unknownProvider"), 4000);
             return;
           }
-          // Switch request model on the channel when needed (keeps multi-model catalog).
-          const models =
-            provider.models?.length
-              ? provider.models
-              : [{ id: provider.model, name: provider.model }];
+          const models = provider.models?.length
+            ? provider.models
+            : [{ id: provider.model, name: provider.model }];
           const catalog = models.some((m) => m.id === pick.modelId)
             ? models
             : [...models, { id: pick.modelId, name: pick.modelId }];
-          const appliedLive = materializeActiveModelChannel({
-            provider,
-            modelId: pick.modelId,
-            models: catalog,
-          });
-          if (provider.model.trim() !== pick.modelId.trim()) {
-            await api.providersUpsert({
-              id: provider.id,
-              model: pick.modelId,
-              baseUrl: provider.baseUrl,
-              name: provider.name,
-              apiBackend: provider.apiBackend,
-              models: catalog,
-              efforts: appliedLive.efforts ?? provider.efforts,
-              contextWindow:
-                appliedLive.contextWindow ??
-                provider.contextWindow ??
-                undefined,
-              supportsVision: appliedLive.supportsVision,
-              setAsDefault: false,
-            });
-          }
-          if (
-            providerActiveSource !== "custom" ||
-            providerActiveId !== pick.providerId
-          ) {
-            const activated = await api.providersActivate(
-              "custom",
-              pick.providerId,
-            );
-            // #557: custom routes require independent agent-home GROK_HOME.
-            if (activated.switchedToIndependent) {
-              setSessionDataMode("independent");
-              showToast(tr("prov.switchedToIndependent"), 5200);
-            }
-          }
-          await refreshProviderRoute();
-          // Map effort into the picked model's catalog (Grok ↔ DeepSeek tiers).
-          const nextEfforts =
-            effortOptionsFromProvider(appliedLive.efforts) ?? GROK_BUILD_EFFORTS;
-          const clampedCustom = mapEffortToTargetCatalog(
-            effort,
-            nextEfforts,
-            channelEffortOptions ?? officialEffortCatalog,
-          );
-          setEffort(clampedCustom);
-          void api
-            .composerPrefsSet({
-              projectId: activeProject?.id ?? null,
-              sessionId: session.sessionId ?? null,
-              modelId: pick.modelId,
-              effort: clampedCustom,
-            })
-            .catch((e) => showToast(String(e), 4000));
+          nextEfforts =
+            effortOptionsFromProvider(
+              materializeActiveModelChannel({
+                provider,
+                modelId: pick.modelId,
+                models: catalog,
+              }).efforts,
+            ) ?? GROK_BUILD_EFFORTS;
         }
+        const clamped = mapEffortToTargetCatalog(
+          effort,
+          nextEfforts,
+          channelEffortOptions ?? officialEffortCatalog,
+        );
+        setModelId(pick.modelId);
+        setEffort(clamped);
+        sessionProviderChip.paint(providerId);
+        if (session.sessionId) {
+          sessionProviderChip.draftComposerRouteRef.current = null;
+        } else {
+          sessionProviderChip.draftComposerRouteRef.current = {
+            providerId,
+            modelId: pick.modelId,
+            effort: clamped,
+          };
+        }
+        const providerChanged =
+          (providerId === "official") !== (providerActiveSource === "official") ||
+          (providerId !== "official" && providerActiveId !== providerId);
+        const sid = session.sessionId;
+        const apply = queueComposerPreferenceApply(
+          effortApplyRef.current,
+          async () => {
+            await api.composerPrefsSet({
+              projectId: activeProject?.id ?? null,
+              sessionId: sid,
+              modelId: pick.modelId,
+              effort: clamped,
+              providerId,
+            });
+            const next = liveHostAfterProviderSwitch(
+              liveHostRef.current,
+              sid,
+              providerChanged,
+            );
+            if (!next) return;
+            liveHostRef.current = next;
+            setLiveHost(next);
+            setSession((prev) =>
+              prev.sessionId === sid ? { ...prev, state: next.state } : prev,
+            );
+          },
+          (error) => showToast(String(error), 4000),
+        );
+        effortApplyRef.current = apply;
+        await apply;
       } catch (e) {
         showToast(String(e), 4000);
       } finally {
+        modelPickBusyRef.current = false;
         setModelPickBusy(false);
       }
     },
     [
-      modelPickBusy,
-      providerActiveSource,
-      providerActiveId,
       availableModels,
       customProviders,
       activeProject?.id,
@@ -9471,39 +9543,145 @@ export function AppWorkbench() {
       effort,
       channelEffortOptions,
       officialEffortCatalog,
-      refreshProviderRoute,
+      providerActiveSource,
+      providerActiveId,
+      sessionProviderChip,
       showToast,
       tr,
-      channelEffortOptions,
-      officialEffortCatalog,
     ],
   );
   const handleContextWindow = useCallback(
     async (tokens: number) => {
-      if (!api.isTauri() || !activeCustomProvider) return;
+      if (!api.isTauri()) return false;
+      if (activeCustomProvider) {
+        try {
+          await api.providersUpsert({
+            id: activeCustomProvider.id,
+            model: activeCustomProvider.model,
+            baseUrl: activeCustomProvider.baseUrl,
+            name: activeCustomProvider.name,
+            apiBackend: activeCustomProvider.apiBackend,
+            models: withModelContextWindow(
+              activeCustomProvider.models,
+              activeCustomProvider.model,
+              tokens,
+            ),
+            efforts: activeCustomProvider.efforts,
+            setAsDefault: false,
+            contextWindow: tokens,
+          });
+          await refreshProviderRoute();
+          return true;
+        } catch (e) {
+          showToast(String(e), 4000);
+          return false;
+        }
+      }
+      const model = availableModels.find((m) => m.id === modelId);
+      const options = selectableContextWindows(model);
+      if (!options.includes(tokens)) {
+        showToast(
+          tr("slash.contextWindowUnknown", {
+            token: String(tokens),
+            options: options.map((n) => formatWindowLabel(n)).join(", "),
+          }),
+          4000,
+        );
+        return false;
+      }
       try {
-        await api.providersUpsert({
-          id: activeCustomProvider.id,
-          model: activeCustomProvider.model,
-          baseUrl: activeCustomProvider.baseUrl,
-          name: activeCustomProvider.name,
-          apiBackend: activeCustomProvider.apiBackend,
-          models: withModelContextWindow(
-            activeCustomProvider.models,
-            activeCustomProvider.model,
-            tokens,
-          ),
-          efforts: activeCustomProvider.efforts,
-          setAsDefault: false,
-          contextWindow: tokens,
+        await api.sessionSetContextWindow(tokens, {
+          sessionId: session.sessionId,
         });
-        await refreshProviderRoute();
+        if (!session.sessionId) setDraftContextWindow(tokens);
+        setContextUsage((prev) => ({
+          ...prev,
+          agentContextWindow: tokens,
+        }));
+        return true;
       } catch (e) {
         showToast(String(e), 4000);
+        return false;
       }
     },
-    [activeCustomProvider, refreshProviderRoute, showToast],
+    [
+      activeCustomProvider,
+      availableModels,
+      modelId,
+      refreshProviderRoute,
+      session.sessionId,
+      showToast,
+      tr,
+    ],
   );
+  const runContextWindowSlash = useCallback(
+    async (args: string) => {
+      const model = availableModels.find((m) => m.id === modelId);
+      const result = resolveContextWindowCommand({
+        args,
+        hasModel: Boolean(modelId),
+        hasSession: Boolean(session.sessionId),
+        options: activeCustomProvider ? [] : selectableContextWindows(model),
+        current: currentModelWindow,
+      });
+      if (result.kind === "switch") {
+        const ok = await handleContextWindow(result.window);
+        if (ok) {
+          showToast(
+            tr("slash.contextWindowSwitched", {
+              size: formatTokenCount(result.window, locale),
+            }),
+            2500,
+          );
+        }
+        return;
+      }
+      const feedback = contextWindowSlashFeedback(result);
+      showToast(tr(feedback.key, feedback.vars), 4000);
+    },
+    [
+      activeCustomProvider,
+      availableModels,
+      currentModelWindow,
+      handleContextWindow,
+      locale,
+      modelId,
+      session.sessionId,
+      showToast,
+      tr,
+    ],
+  );
+  contextWindowSlashRef.current = runContextWindowSlash;
+  const runContextSlash = useCallback(
+    async (announce: boolean) => {
+      if (!api.isTauri() || !session.sessionId) {
+        if (announce) showToast(tr("slash.contextNoSession"), 4000);
+        return;
+      }
+      try {
+        const raw = await api.sessionContextInfo(session.sessionId);
+        const view = parseContextInfoPayload(raw);
+        if (!view) {
+          if (announce) showToast(tr("slash.contextUnavailable"), 4000);
+          return;
+        }
+        setContextUsage((prev) => ({
+          ...prev,
+          knownTokens: view.used,
+          agentContextWindow:
+            view.total > 0 ? view.total : prev.agentContextWindow,
+          agentPercentage: null,
+          lastCompactMessageId: null,
+          contextInfo: view,
+          contextInfoNonce: (prev.contextInfoNonce ?? 0) + 1,
+        }));
+      } catch (e) {
+        if (announce) showToast(String(e), 4000);
+      }
+    },
+    [session.sessionId, showToast, tr],
+  );
+  contextSlashRef.current = runContextSlash;
   const liveBrandKind = useMemo(
     () =>
       superGrokBrandKind(
@@ -9618,18 +9796,21 @@ export function AppWorkbench() {
     welcomeSession,
   ]);
 
-  const stop = async () => {
+  const stop = async (explicitSessionId?: string | null): Promise<boolean> => {
     const now = Date.now();
     // Composer Stop scope = current viewed chat only (not global Stop-all).
     // Preferring the Host live slot cancelled a foreign turn whenever the
     // viewed chat had been demoted to background.
+    // An explicit id (end-and-continue) stays on that chat after a switch.
     const sid =
+      explicitSessionId?.trim() ||
       resolveStopTargets({
         scope: "current",
         currentSessionId:
           viewingSessionIdRef.current || liveHostRef.current.sessionId || null,
         busySessionIds: [],
-      })[0] ?? null;
+      })[0] ||
+      null;
     const armed = armStopLatch(stopLatchRef.current, sid, now);
     stopLatchRef.current = armed;
     setStopLatch(armed);
@@ -9705,8 +9886,9 @@ export function AppWorkbench() {
         forceUnlockLocal(id, "force");
       }
     }, STOP_LATCH_MS + 50);
+    let cancelDelivered = false;
     try {
-      await api.sessionStop(sid);
+      cancelDelivered = (await api.sessionStopReport(sid)).cancelDelivered === true;
       setRetryStatus(null);
       setStreamStall(null);
       clearTurnClock(sid);
@@ -9737,6 +9919,7 @@ export function AppWorkbench() {
       const settled = settleStopLatchAfterSessionStop(stopLatchRef.current);
       stopLatchRef.current = settled;
       setStopLatch(settled);
+      return cancelDelivered;
     } catch (e) {
       // Host stop can fail ("no active session") while UI still shows thinking.
       // Always finish local unlock so Stop never leaves a dead busy shell.
@@ -9745,6 +9928,7 @@ export function AppWorkbench() {
       stopLatchRef.current = settled;
       setStopLatch(settled);
       setLocalError(String(e));
+      return false;
     }
   };
 
@@ -11290,7 +11474,7 @@ export function AppWorkbench() {
         showToast(tr(opts?.busyToastKey ?? "message.editBusy"));
         return;
       }
-      const segments = parseStoredContent(storedDisplay);
+      const segments = parseStoredContentWithRefs(storedDisplay);
       if (isDraftEmpty(segments) && !att.length) return;
 
       const agentBody = serializeForAgent(segments, { goalMode });
@@ -11308,6 +11492,8 @@ export function AppWorkbench() {
       // May still be a draft id; ensureConnected materializes it later.
       let sendTargetId = session.sessionId;
       let cacheKey = sendTargetId ?? "__draft__";
+      const priorKey = cacheKey;
+      const priorMessages = messagesRef.current.slice();
       const nowIso = new Date().toISOString();
       const nextModelId = opts?.modelId?.trim() || "";
       const switchModel =
@@ -11324,49 +11510,43 @@ export function AppWorkbench() {
 
       // 1) Instant UI commit — same as normal send: user bubble + thinking.
       //    Connect/rewind wait happens under this thinking row, not the edit form.
+      let liveBeforeEdit = liveHostRef.current;
+      let tookOptimisticLive = false;
       setMessages((m) => {
-        const kept = truncateBeforeLastUser(m);
-        const next: ChatMessage[] = [
-          ...kept,
-          {
-            id: `u-${Date.now()}`,
-            role: "user",
-            content: storedDisplay,
-            attachments: att.length ? att : undefined,
-            createdAt: nowIso,
-          },
-          {
-            id: pendingAssistantId,
-            role: "assistant",
-            content: "",
-            streaming: true,
-            createdAt: nowIso,
-          },
-        ];
+        const next = messagesAfterEditResend(m, {
+          userId: `u-${Date.now()}`,
+          pendingAssistantId,
+          content: storedDisplay,
+          attachments: att,
+          createdAt: nowIso,
+        });
         messagesBySessionRef.current.set(cacheKey, next);
         return next;
       });
       setEditingUserMessageId(null);
       setEditAttachments([]);
       setRetryStatus(null);
-      setSession((prev) =>
-        prev.state === "streaming" || prev.state === "awaiting_permission"
-          ? prev
-          : { ...prev, state: "streaming", lastError: null },
-      );
+      setSession((prev) => shellAfterEditResendStart(prev));
       setLiveHost((prev) => {
-        if (sendTargetId && prev.sessionId && prev.sessionId !== sendTargetId) {
-          return prev;
-        }
-        const next = {
-          ...prev,
-          sessionId: sendTargetId ?? prev.sessionId,
-          state: "streaming" as const,
-          lastError: null,
-        };
-        liveHostRef.current = next;
+        liveBeforeEdit = prev;
+        const next = optimisticLiveHostForEditResend(prev, sendTargetId);
+        tookOptimisticLive = next !== prev;
+        if (tookOptimisticLive) liveHostRef.current = next;
         return next;
       });
+      const restoreEditFailure = (targetId: string | null) => {
+        setSession((prev) => shellReadyAfterRewindFailure(prev, targetId));
+        setLiveHost((prev) => {
+          const next = restoreOptimisticLiveHost(
+            prev,
+            liveBeforeEdit,
+            targetId,
+            tookOptimisticLive,
+          );
+          liveHostRef.current = next;
+          return next;
+        });
+      };
 
       const failPending = (errText?: string) => {
         const errTarget = sendTargetId ?? viewingSessionIdRef.current;
@@ -11380,17 +11560,7 @@ export function AppWorkbench() {
             localeRef.current,
           ),
         );
-        if (
-          viewingSessionIdRef.current === sendTargetId ||
-          viewingSessionIdRef.current === errTarget ||
-          (!sendTargetId && viewingSessionIdRef.current === null)
-        ) {
-          setSession((prev) =>
-            prev.state === "streaming"
-              ? { ...prev, state: prev.sessionId ? "ready" : prev.state }
-              : prev,
-          );
-        }
+        restoreEditFailure(sendTargetId);
       };
 
       // 2) Background: connect → rewind journal → send (thinking already shown).
@@ -11415,8 +11585,23 @@ export function AppWorkbench() {
           try {
             await api.sessionRewindDropLastUser(sessionId);
           } catch (e) {
-            console.warn("session rewind before edit failed", e);
-            // Continue: UI already replaced the turn; resend still proceeds.
+            // The bubble was already replaced. A failed rewind must not send,
+            // or the agent answers the prompt that is no longer on screen.
+            messagesBySessionRef.current.set(priorKey, priorMessages);
+            messagesBySessionRef.current.set(sessionId, priorMessages);
+            if (
+              viewingSessionIdRef.current === sessionId ||
+              viewingSessionIdRef.current === priorKey ||
+              viewingSessionIdRef.current == null
+            ) {
+              setMessages(priorMessages);
+            }
+            restoreEditFailure(sessionId);
+            showToast(
+              tr("session.rewindFailed") + ": " + String(e),
+              4500,
+            );
+            return;
           }
         }
 
@@ -11550,28 +11735,17 @@ export function AppWorkbench() {
     ],
   );
 
-  const onThreadContinueInterrupted = useCallback(() => {
-    const sid = session.sessionId;
-    if (!sid) return;
-    if (
-      session.state === "streaming" ||
-      session.state === "awaiting_permission" ||
-      session.state === "connecting"
-    ) {
-      return;
-    }
-    void (async () => {
-      const ctx = await api.sessionInterruptContext(sid);
-      const journal = tr("endOfTurn.continuePrompt");
-      await executeSendLatestRef.current({
-        storedDisplay: journal,
-        att: [],
-        goalMode: false,
-        targetSessionId: sid,
-        agentTextOverride: buildContinueAgentPrompt(ctx),
-      });
-    })();
-  }, [session.sessionId, session.state, tr]);
+  const { endAndContinueBusy, endAndContinue, onThreadContinueInterrupted } =
+    useEndAndContinue({
+      stop,
+      sendContinue: (args) => executeSendLatestRef.current(args),
+      showToast,
+      tr,
+      readHostState: (sid) =>
+        liveMapRef.current[sid]?.state ||
+        (liveHostRef.current.sessionId === sid ? liveHostRef.current.state : null),
+      readViewedSessionId: () => session.sessionId,
+    });
 
   const onThreadAddQuote = useCallback(
     (quote: { text: string; comment: string; sourceMessageId?: string }) => {
@@ -12049,6 +12223,7 @@ export function AppWorkbench() {
         closeToTray={closeToTray}
         compactionDetail={compact.compactionDetail}
         compactionMode={compact.compactionMode}
+        composerEditor={composerEditor}
         confirmArchiveOlderThan={confirmArchiveOlderThan}
         defaultOpenTarget={defaultOpenTarget}
         deleteSessionsConfirm={deleteSessionsConfirm}
@@ -12132,6 +12307,7 @@ export function AppWorkbench() {
         setCloseToTray={setCloseToTray}
         setCompactionDetail={compact.setCompactionDetail}
         setCompactionMode={compact.setCompactionMode}
+        setComposerEditor={setComposerEditor}
         setDefaultOpenTarget={setDefaultOpenTarget}
         setDisableWebSearch={setDisableWebSearch}
         setDisallowedTools={setDisallowedTools}
@@ -12307,7 +12483,7 @@ export function AppWorkbench() {
           activeCustomProvider={activeCustomProvider}
           mainPane={mainPane}
           onOpenSearch={() => searchPalette.openBlank()}
-          onNewChat={() => void newChat(null)}
+          onNewChat={() => void newChat()}
           onNavigateAutomations={navigateAutomations}
           onNavigateKanban={navigateKanban}
           onNavigateRemoteIm={() => navigateSettings("remote_im", "im")}
@@ -12580,7 +12756,7 @@ export function AppWorkbench() {
             availableModels={availableModels}
             beginEditLastUser={beginEditLastUser}
             canEditLastUser={canEditLastUser}
-            canRewindSession={canRewindSession}
+            canRewindSession={canRewindNow}
             cancelEditUser={cancelEditUser}
             chatFindFocusKey={chatFindFocusKey}
             composerFloatPad={composerFloatPad}
@@ -12614,6 +12790,10 @@ export function AppWorkbench() {
             onThreadAddAttachmentToComposer={onThreadAddAttachmentToComposer}
             onThreadAddQuote={onThreadAddQuote}
             onThreadContinueInterrupted={onThreadContinueInterrupted}
+            endAndContinueBusy={endAndContinueBusy}
+            onStallEndAndContinue={(sid) => {
+              void endAndContinue(sid);
+            }}
             onThreadOpenError={onThreadOpenError}
             onThreadOpenModifiedPath={onThreadOpenModifiedPath}
             onThreadOpenResource={onThreadOpenResource}
@@ -12719,10 +12899,13 @@ export function AppWorkbench() {
             confirmRemoveWorktree={confirmRemoveWorktree}
             connecting={connecting}
             contextUsageDisplay={contextUsageDisplay}
+            refreshContextInfo={() => {
+              contextSlashRef.current(false);
+            }}
             currentModelWindow={currentModelWindow}
             customRouteActive={customRouteActive}
             cycleAttachedChatScope={cycleAttachedChatScope}
-            effectiveCanSend={effectiveCanSend}
+            effectiveCanSend={effectiveCanSend && !modelPickBusy}
             effectiveCanStop={effectiveCanStop}
             effort={effort}
             formatPermCountdown={formatPermCountdown}
@@ -12755,6 +12938,7 @@ export function AppWorkbench() {
             onComposerPasteFiles={onComposerPasteFiles}
             onComposerPasteMediaFallback={onComposerPasteMediaFallback}
             onSlashQueryChange={onSlashQueryChange}
+            onAtQueryChange={reportAtQuery}
             openAsidePane={openAsidePane}
             openQueueEdit={queueEdit.openEdit}
             openSession={openSession}
@@ -13433,6 +13617,7 @@ export function AppWorkbench() {
             archiveSession={archiveSession}
             bulkMoveMenuItems={bulkMoveMenuItems}
             busyIds={busyIds}
+            canRewindNow={canRewindNow}
             canRewindSession={canRewindSession}
             clearSessionPluginDirs={clearSessionPluginDirs}
             composerCtxItems={composerCtxItems}

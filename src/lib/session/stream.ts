@@ -1,4 +1,5 @@
 import { isDisplayableAttachmentPath } from "../attachments";
+import { localPathIdentity } from "../pathNormalize";
 import type {
   ChatMessage,
   MessageAttachment,
@@ -84,7 +85,8 @@ export function applyGeneratedImage(
 
   const prev = messages[idx]!;
   const existing = prev.attachments ?? [];
-  if (existing.some((a) => a.path === path)) return messages;
+  const key = localPathIdentity(path);
+  if (existing.some((a) => localPathIdentity(a.path) === key)) return messages;
   const next = messages.slice();
   next[idx] = {
     ...prev,
@@ -385,7 +387,7 @@ export function applyInterjection(
 }
 
 /** Visible body on an assistant row (text / thought / segments / media). */
-function assistantHasVisibleBody(m: ChatMessage): boolean {
+export function assistantHasVisibleBody(m: ChatMessage): boolean {
   if (m.content?.trim()) return true;
   if (m.thought?.trim()) return true;
   if (m.attachments?.length) return true;

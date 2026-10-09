@@ -17,6 +17,8 @@ pub async fn settings_set(
 ) -> Result<AppSettings, String> {
     let prev = store::load_settings_async().await;
     let mut settings = settings;
+    settings.composer_editor =
+        store::normalize_composer_editor(&settings.composer_editor).to_string();
     settings.wallpaper_x_search_mode =
         store::normalize_wallpaper_x_search_mode(&settings.wallpaper_x_search_mode).into();
     // Normalize denylist / allowlist so spawn / equality see stable lists.
@@ -351,6 +353,7 @@ pub async fn composer_prefs_set(
     effort: Option<String>,
     mode: Option<String>,
     permission_policy: Option<String>,
+    provider_id: Option<String>,
 ) -> Result<store::ComposerPrefs, String> {
     // Prefer explicit ids; fall back to live session context.
     let (live_proj, live_sess) = mgr.current_context_ids();
@@ -367,6 +370,13 @@ pub async fn composer_prefs_set(
     let previous_effort = effort.as_ref().map(|_| {
         store::resolve_composer_prefs(project_id.as_deref(), session_id.as_deref()).effort
     });
+    let (previous_provider, ssh) = session_provider_and_ssh(session_id.as_deref());
+    let pick = crate::providers::composer_provider_pick(
+        ssh,
+        previous_provider.as_deref(),
+        provider_id.as_deref(),
+        model_id.as_deref(),
+    );
 
     let prefs = store::save_composer_prefs(
         project_id.as_deref(),
@@ -375,15 +385,31 @@ pub async fn composer_prefs_set(
         effort.clone(),
         mode.clone(),
         permission_policy.clone(),
+        pick.provider_to_persist.clone(),
     )?;
+    if let (Some(sid), Some(pid)) = (session_id.as_deref(), pick.provider_to_persist.as_deref()) {
+        mgr.remember_session_provider(sid, pid);
+    }
 
     if let Some(ref pol) = permission_policy {
         if let Err(e) = mgr.apply_permission_policy(&app, pol).await {
             tracing::warn!("composer_prefs_set apply_permission: {e}");
         }
     }
-    if let Some(mid) = model_id {
-        if let Err(e) = mgr.set_model(mid).await {
+    // Empty stored id follows the global route. Comparing the raw column to
+    // the pick treats the first save of that same route as a switch, which
+    // clears the CLI resume id and skips session/set_model. SSH pins both
+    // sides to official, so an official model never respawns that chat.
+    if pick.route_changed {
+        // This chat's process was spawned for the previous provider. Clear
+        // only this session's CLI resume id, then cold-spawn this chat.
+        // `session/load` would restore the old route. Never `recycle_all`.
+        if let Some(sid) = session_id.as_deref() {
+            mgr.invalidate_spawn_flags_for_session(&app, sid, "session_provider")
+                .await;
+        }
+    } else if let Some(mid) = pick.set_model_id {
+        if let Err(e) = mgr.set_model(mid, session_id.as_deref()).await {
             tracing::warn!("composer_prefs_set set_model soft-fail: {e}");
         }
     }
@@ -409,6 +435,24 @@ pub async fn composer_prefs_set(
     Ok(prefs)
 }
 
+fn session_provider_and_ssh(session_id: Option<&str>) -> (Option<String>, bool) {
+    let Some(sid) = session_id.map(str::trim).filter(|s| !s.is_empty()) else {
+        return (None, false);
+    };
+    let row = store::load_sessions_index()
+        .into_iter()
+        .find(|s| s.id == sid);
+    let Some(row) = row else {
+        return (None, false);
+    };
+    let ssh = row.project_id.as_deref().is_some_and(|pid| {
+        store::load_projects()
+            .into_iter()
+            .any(|p| p.id == pid && p.is_ssh_remote())
+    });
+    (row.provider_id, ssh)
+}
+
 #[tauri::command]
 pub async fn session_set_policy(
     app: tauri::AppHandle,
@@ -426,6 +470,7 @@ pub async fn session_set_policy(
         None,
         None,
         Some(p.as_str().into()),
+        None,
     )?;
     mgr.apply_permission_policy(&app, p.as_str()).await?;
     Ok(prefs)
@@ -439,18 +484,44 @@ pub async fn session_set_model(
     session_id: Option<String>,
 ) -> Result<store::ComposerPrefs, String> {
     let (live_proj, live_sess) = mgr.current_context_ids();
+    let session_id = session_id.or(live_sess);
     let prefs = store::save_composer_prefs(
         project_id.or(live_proj).as_deref(),
-        session_id.or(live_sess).as_deref(),
+        session_id.as_deref(),
         Some(model_id.clone()),
         None,
         None,
         None,
+        None,
     )?;
-    if let Err(e) = mgr.set_model(model_id).await {
+    if let Err(e) = mgr.set_model(model_id, session_id.as_deref()).await {
         tracing::warn!("session_set_model soft-fail: {e}");
     }
     Ok(prefs)
+}
+
+/// Set the live session context window. Does not rewrite composer model prefs.
+#[tauri::command]
+pub async fn session_set_context_window(
+    mgr: State<'_, Arc<SessionManager>>,
+    tokens: u64,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let (_live_proj, live_sess) = mgr.current_context_ids();
+    let session_id = session_id.or(live_sess);
+    mgr.set_context_window(tokens, session_id.as_deref())
+        .await
+}
+
+/// Live session info for `/context` (`x.ai/session/info`).
+#[tauri::command]
+pub async fn session_context_info(
+    mgr: State<'_, Arc<SessionManager>>,
+    session_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let (_live_proj, live_sess) = mgr.current_context_ids();
+    let session_id = session_id.or(live_sess);
+    mgr.session_context_info(session_id.as_deref()).await
 }
 
 #[tauri::command]

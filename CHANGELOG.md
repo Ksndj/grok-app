@@ -15,15 +15,132 @@ See `docs/llm-wiki/release.md`.
 
 ### Added
 - Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
+- Official models can use another context length when the model offers more than one.
+- The usage chip can show the CLI's own context breakdown.
 
 **中文 · 新增**
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
+- 官方模型如果提供多种上下文长度，可以改用其中一种。
+- 用量条可以显示 CLI 自己算出的上下文明细。
 
 ### Fixed
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
+- File names in the @ menu stay whole, and overflow ends with an ellipsis.
+- Windows plugin sign-in no longer waits until the attempt times out.
+- A model name with brackets no longer erases the provider listed above it.
+- A chat file link cannot leave the project through a parent folder.
+- A torn account list is kept aside instead of being replaced with an empty one.
+- A renamed file shows up under its new name.
+- Closing goal mode tries again if the first clear does not go through.
+- Continue shows for the same stopped turns the status line already marks.
+- The same Windows file stays one attachment when only the slashes differ.
+- A non-text file token no longer blanks the whole chat.
+- A finished tool turn no longer looks like the app restarted.
 
 **中文 · 修复**
 - 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+- @ 菜单里的文件名会完整显示，放不下时末尾才出现省略号。
+- Windows 上的插件登录不再一直等到这次尝试超时。
+- 模型名字里带方括号时，不会再清掉它上面的那个供应商。
+- 对话里的文件链接不能顺着上级目录跑出当前项目。
+- 写到一半的账号列表会被挪到旁边，而不会换成一份空列表。
+- 重命名后的文件会显示在新名字下面。
+- 关闭目标模式时，如果第一次清除没有发出去，会再试一次。
+- 继续按钮会出现在状态行已经标成可继续的回合上。
+- 同一个 Windows 文件只是斜杠不同时，仍然只算一个附件。
+- 文件路径如果不是文字，整段对话不再因此变空白。
+- 已经做完的工具回合，切换对话时不再显示成应用重启。
+
+## [0.2.39] - 2026-10-06
+
+> **Highlight:** Goal mode reaches the CLI, and a stalled reply can continue in the same chat.
+>
+> **中文 · 亮点：** 目标模式会交给 CLI，卡住的回复也可以在同一条对话里接着写。
+
+### Fixed
+- Goal mode keeps /goal at the start of the message the CLI receives. Earlier context stays in the objective.
+- Opening the app again no longer clears login files for chats already running.
+- Stopping a chat from the phone mirror stops the agent again.
+- File references in the Markdown composer are sent as file paths.
+- The composer editor choice stays after a restart.
+- Code in the Markdown composer keeps its backslashes.
+- A slash command replaces the one at the cursor.
+- Dictation in the Markdown composer lands at the cursor.
+- A typed link keeps the space after it.
+- Custom channels connect again when the channel name and the model id differ. The app tells the CLI the channel name, which is how that CLI finds the key. (#1294)
+- Sending one picture on Windows no longer shows that picture twice. The chat was counting the same file a second time. (#1284)
+- Chat text now uses the font you set under Appearance. Code blocks keep the code font. (#1297)
+- Official and custom chats no longer share one login file. Each running chat keeps its own copy. (#1293)
+- A stalled reply can be ended and continued in the same chat. The notice says when the model stream was cut off.
+
+**中文 · 修复**
+- 打开目标模式后，发给 CLI 的内容仍以 /goal 开头。前面的历史和引用留在目标正文里。
+- 再次打开应用时，不会清掉已经在跑的对话的登录文件。
+- 在手机镜像里点停止，会再次停住这条对话。
+- Markdown 输入框里的文件引用会按文件路径发出去。
+- 输入框编辑器的选择在重启后仍然保留。
+- Markdown 输入框里的代码会保留反斜杠。
+- 选择斜杠命令时，替换的是光标处的那一个。
+- 在 Markdown 输入框里听写，文字落在光标处。
+- 敲出来的链接会保留后面的空格。
+- 通道名称和模型 ID 不同时，自定义通道可以重新连上。应用发给 CLI 的是通道名，CLI 靠它找到密钥。（#1294）
+- 在 Windows 上发送一张图片后，不会再显示成两张。同一文件之前被算了两次。（#1284）
+- 对话正文会使用外观里选的界面字体。代码块仍用代码字体。（#1297）
+- 独立模式下，官方对话和自定义对话不再共用同一份登录文件。每条正在运行的对话使用自己的副本。（#1293）
+- 输出停住时，可以结束本轮并在同一条对话里接着写。提示会说明模型流是否中途断过。
+
+## [0.2.38] - 2026-09-30
+
+> **Highlight:** Each chat keeps its own model and provider.
+>
+> **中文 · 亮点：** 每条对话会记住自己的模型和服务商。
+
+### Added
+- Requesty is available as a custom-provider preset.
+- Long sidebar groups list five chats, then Show more. Pinned chats stay fully listed, the open chat is revealed, and collapsing a group starts over. (#1263)
+
+**中文 · 新增**
+- 自定义供应商画廊增加了 Requesty 一键预设。
+- 侧栏分组过长时先列出五条对话，再点「显示更多」。置顶仍全部列出，当前对话会自动露出，收起后从第一页开始。（#1263）
+
+### Fixed
+- Switching chats no longer keeps the previous chat's goal switch on.
+- Rewinding a running reply stops that chat first. A failed rewind is not sent.
+- A failed edit and resend no longer clears Stop on another chat. That chat can send its queued messages again.
+- Pinned chats stay in pin order, with the workspace name as a divider.
+- Closing the goal chip tells that chat's CLI to run /goal clear.
+- The session progress rail no longer scrolls the transcript while a reply is running.
+- Changing one chat's model no longer stops the others or restarts this chat.
+- Reopening a chat uses the model and provider it last chose. Custom providers keep that model and its effort, including a choice saved while connecting.
+- Switching a chat's provider finishes before the next message is sent. Queued messages wait, the chat starts clean on the new provider, and SSH chats stay on the official provider.
+- New session in the sidebar keeps the project you already have open.
+- Voice dictation stays in the chat where you stopped recording. Switching away while it transcribes leaves the text in that draft and does not send it.
+- A turn error keeps the reply that already streamed. The failure shows as its own message instead of replacing that text. (#1265)
+- Plan review no longer repeats the same steps as plain text. A separate plan write-up still shows when one was written. (#1267)
+- Plan progress keeps updating while the turn is still working. Later steps still arrive after the prompt finishes but tools keep running. (#1266)
+- WSL no longer misses an installed CLI at an absolute path. Leaving that path unchanged no longer saves it again, Test checks once, and the shown path drops the extra slash. (#1264, #1269)
+- j and k move only through chats shown in the sidebar. Chats hidden by the current space or an SSH project are skipped. (#1268)
+- Scrolling the sidebar or file list no longer sticks on the first screen. The list follows its own pane when that pane briefly cannot scroll. (#1261)
+
+**中文 · 修复**
+- 切到另一条对话后，不再沿用上一条的目标开关。
+- 回复还在进行时撤回，会先停这一条。撤回失败不会把新内容发出去。
+- 编辑后重发失败时，不会清掉另一条对话的停止按钮。这条对话排队的消息也可以再发出去。
+- 置顶按置顶顺序保留，工作区名只作分隔。
+- 关掉目标芯片时，会让这一条对话的 CLI 执行 /goal clear。
+- 回复进行中，侧边进度条不再把正文滚回上面。
+- 在一条对话里换模型，不再停掉其他对话，也不会重新开始这一条。
+- 重新打开一条对话时，仍用它上次选的模型和服务商。自定义服务商会保留该模型和努力档，连接过程中保存的选择也会留下。
+- 更换服务商会先完成，下一条消息才发出去。排队的消息也会等，这条对话在新服务商上重新开始，SSH 对话仍用官方服务商。
+- 在侧栏新建对话时，会沿用当前已经打开的项目。
+- 语音转写停在停止录音的那条对话里。转写还没结束就切走时，文字留在那条草稿里，不会发出去。
+- 回合出错时，已经输出的回复会留下来。失败会另成一条消息，不再盖掉这段文字。（#1265）
+- 计划审阅不再把同样的步骤再写成一段正文。模型另写了计划正文时，正文仍会显示。（#1267）
+- 回合还在工作时，计划进度会继续更新。提示已经结束但工具仍在运行时，后续步骤仍会到达。（#1266）
+- WSL 不再把绝对路径上已安装的 CLI 当成没找到。路径没改就离开时不会再次保存，测试只检查一次，显示的路径也不再多一个斜杠。（#1264、#1269）
+- j 和 k 只会在侧栏当前显示的对话之间移动。被当前空间或 SSH 项目藏起来的对话会跳过。（#1268）
+- 滚动侧栏或文件列表时，不再卡在第一屏。窗格暂时不能滚动时，列表仍跟着自己的窗格走。（#1261）
+
 
 ## [0.2.37] - 2026-09-22
 

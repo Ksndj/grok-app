@@ -13,6 +13,18 @@
 
 探测：`scripts/probe-models.sh`。Host：`models_list_available`。
 
+## 上下文窗口
+
+CLI `models_cache.json` 的 `info.context_window` 是目录默认值（Grok 4.7 / Fast / 4.6 / 4.5 当前为 **256000**）。可选长度在 `info.context_windows`（当前 `[256000, 500000]`）。静态兜底与此相同。`initialize` 的 live 覆盖只改默认值，不抹掉列表。
+
+列表多于一项时，Composer 高级菜单列出这些长度。选中后对**当前 live 会话**发 `session/set_model`，只带 `_meta.contextWindow`（正整数 token 数），不带 `reasoningEffort`，CLI 因此保持当前推理档。不改已保存的模型偏好。
+
+`/context-window` 与 Grok Build pager 相同：接受 `256k` / `1m`（大小写不敏感）或原始 token 数；空参数给出用法和当前值；不在列表里则报未知。新对话还没有 `session/new` 时，选择会记在 composer 上并在第一次建会话的 `session/set_model` 里带上 `_meta.contextWindow`，菜单立刻显示新长度。只有一个或没有可选窗口时命令说明该模型不能选。缩到比当前用量更小的窗口时，自动压缩由 CLI 自己做。
+
+自定义提供商仍在同一行手填 token，写入通道配置，不走这条 ACP。
+
+`/context` 读取 live 会话的 `x.ai/session/info`（先 `_x.ai/session/info`）。用量菜单按 pager 拆成系统提示、消息、推理/开销、空闲，工具定义、技能、工作流、MCP 标成已经算进上面的行。自动压缩阈值和剩余 token 用快照里的 `autoCompactThresholdPercent`。没有活动会话时命令报错，不把这行发给模型。会话信息拿不到时，菜单仍用原来的角色估算。
+
 Spawn 顺序（CLI 0.2.x）：
 
 ```text
@@ -197,7 +209,7 @@ grok --no-auto-update --permission-mode <mode> agent [--model <id>] [--reasoning
 1. **官方**分组：catalog 模型（`availableModels`）
 2. **每个已配置提供商**一组：列出该提供商 catalog 中的全部请求模型（`models[]`，每项含 **展示名称** + model id），**不**在菜单里拉远程 `/v1/models`
 
-选择自定义条目会：必要时更新该通道的 active `model`，再 `providers_activate`（与 Settings → Account → Custom providers → **Use** 相同）。官方条目在当前为 custom 路由时会先切回 official，再写入 catalog `modelId` 偏好。
+选择一条模型只写入这条对话（`composer_prefs_set` 的 `provider_id` / `modelId`）。不调用 `providers_activate`，也不改全局 `[models].default`。Settings → **Use** 才是全局路由，会回收所有 warm agent。
 
 芯片文案：官方用 catalog label；自定义路由用 **当前选中模型的展示名称**（`models[].name`，空则回退 model id）。
 

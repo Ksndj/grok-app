@@ -25,6 +25,8 @@ mod agent_memory_embed;
 
 mod agent_prefs;
 
+mod agent_proc_home;
+
 mod agent_privacy;
 
 mod agent_subagent_wt_snap;
@@ -542,6 +544,9 @@ pub fn run() {
         })
 
         .setup(|app| {
+            // Plugin setup already exited any second process. Sweep only here,
+            // so a relaunch cannot delete the running chats' agent-proc homes.
+            agent_proc_home::sweep_orphans();
 
             crate::path_scope::refresh_from_store();
 

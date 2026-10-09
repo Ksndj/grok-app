@@ -19,6 +19,36 @@ use crate::store::{self, ChatMessageStored};
 
 use super::*;
 
+/// True when this turn already showed text, thought, media, or tool activity.
+fn turn_has_kept_partial(s: &LiveSession) -> bool {
+    !s.stream_buf.trim().is_empty()
+        || !s.stream_thought.trim().is_empty()
+        || !s.stream_attachments.is_empty()
+        || s.tools_this_turn > 0
+        || !s.open_tool_ids.is_empty()
+        || s.saw_model_output
+}
+
+/// Empty bubbles keep the streaming id so the error replaces them.
+/// A visible partial keeps that id; the error uses a stable sibling id.
+pub(super) fn turn_error_message_id(
+    streaming_message_id: Option<&str>,
+    keep_partial: bool,
+) -> String {
+    let streaming = streaming_message_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if keep_partial {
+        return match streaming {
+            Some(id) => format!("{id}:turn-error"),
+            None => Uuid::new_v4().to_string(),
+        };
+    }
+    streaming
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
+}
+
 /// Count living ACP children by their process identity rather than by session
 /// map entries. Warm reuse intentionally leaves multiple session shells with
 /// the same `process_id` / `Arc<AcpClient>`, so counting entries can make a
@@ -371,6 +401,33 @@ impl SessionManager {
         )
     }
 
+    /// Record a provider `retry_state` without touching stall progress.
+    ///
+    /// Body-decode failures are remembered for the rest of the turn when the
+    /// host owns it. Other reasons still update `provider_retry_attempt` but
+    /// do not set the stall hint. Does not call `touch_stream_progress_locked`.
+    pub(super) fn note_provider_retry(s: &mut LiveSession, attempt: u32, reason: &str) {
+        s.provider_retry_attempt = attempt;
+        if !Self::should_apply_provider_retry_abort(s) {
+            return;
+        }
+        if crate::acp_client::is_stream_decode_retry_reason(reason) {
+            s.last_provider_retry = Some((Instant::now(), reason.to_string()));
+        }
+    }
+
+    pub(super) fn clear_provider_retry_memory(s: &mut LiveSession) {
+        s.provider_retry_attempt = 0;
+        s.provider_retry_aborted = false;
+        s.last_provider_retry = None;
+    }
+
+    pub(super) fn stream_interrupted_this_turn(s: &LiveSession) -> bool {
+        s.last_provider_retry
+            .as_ref()
+            .is_some_and(|(_, reason)| crate::acp_client::is_stream_decode_retry_reason(reason))
+    }
+
     /// Whether connect/respawn must keep the existing agent process.
     ///
     /// Terminal FSM states (`Disconnected` / `Idle`) never preserve the process —
@@ -418,6 +475,7 @@ impl SessionManager {
         s.stall_soft_emits = 0;
         s.saw_model_output = false;
         s.tools_this_turn = 0;
+        Self::clear_provider_retry_memory(s);
     }
 
     /// Park or background the current live session so focus can move.
@@ -678,6 +736,7 @@ impl SessionManager {
             policy: parked.policy,
             provider_retry_attempt: 0,
             provider_retry_aborted: false,
+            last_provider_retry: None,
             needs_history_bootstrap: parked.needs_history_bootstrap,
             pending_plan_rpc_id: None,
             pending_permission_rpc_id: None,
@@ -1502,10 +1561,16 @@ impl SessionManager {
         err: &AgentError,
         pending_emits: &mut Vec<StreamEmitPayload>,
     ) -> PendingTurnBoundaryPersist {
-        let mid = s
-            .streaming_message_id
-            .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        // Journal rows are upserted by id. Reusing the streaming id for the
+        // error overwrites a partial answer that was already flushed. Flush
+        // whatever is still buffered, then store the error under its own id.
+        let keep_partial = turn_has_kept_partial(s);
+        let stream_flush = if keep_partial {
+            Self::prepare_stream_journal_flush(s, true, false)
+        } else {
+            None
+        };
+        let mid = turn_error_message_id(s.streaming_message_id.as_deref(), keep_partial);
         let code = err.code.as_str();
         let detail = sanitize_error_detail(err.message.trim());
         // Persist machine-readable code first so the frontend can i18n the summary.
@@ -1521,7 +1586,7 @@ impl SessionManager {
         Self::release_failed_turn_markers(s, Some(pending_emits));
 
         PendingTurnBoundaryPersist {
-            stream_flush: None,
+            stream_flush,
             session_id: s.app_session_id.clone(),
             message: ChatMessageStored {
                 id: mid.clone(),
@@ -1548,7 +1613,7 @@ impl SessionManager {
 
 #[cfg(test)]
 mod process_accounting_tests {
-    use super::{count_unique_alive_processes, process_recycle_is_blocked};
+    use super::{count_unique_alive_processes, process_recycle_is_blocked, turn_error_message_id};
     use std::collections::HashSet;
 
     #[test]
@@ -1578,6 +1643,19 @@ mod process_accounting_tests {
             stream.contains("fn commit_turn_boundary_persist("),
             "turn-boundary disk/IPC must live in commit_turn_boundary_persist"
         );
+    }
+
+    #[test]
+    fn turn_error_id_does_not_reuse_a_visible_stream_row() {
+        assert_eq!(turn_error_message_id(Some("stream-1"), false), "stream-1");
+        assert_eq!(
+            turn_error_message_id(Some("stream-1"), true),
+            "stream-1:turn-error"
+        );
+        assert!(turn_error_message_id(Some("  "), false).len() > 8);
+        let fresh = turn_error_message_id(None, true);
+        assert!(!fresh.is_empty());
+        assert!(!fresh.ends_with(":turn-error"));
     }
 
     #[test]
