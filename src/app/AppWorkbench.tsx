@@ -355,10 +355,8 @@ import { mapStoredMessagesToChat } from "@/lib/mapStoredMessages";
 import {
   rankAtFileHits,
   removeAtTokenFromDraft,
+  toAtFileHits,
 } from "@/lib/atFileQuery";
-import {
-  type ComposerAtFileEntry,
-} from "@/components/ComposerAtPanel";
 import {
   formatAttachErrorMessage,
   isAttachPayloadTooLarge,
@@ -2390,6 +2388,7 @@ export function AppWorkbench() {
         prefs,
         catalog,
         providers: sessionProviderChip.providersSnapshot(),
+        draft: sessionProviderChip.draftComposerRouteRef.current,
       });
       setModelId(next.modelId);
       setEffort(next.effort);
@@ -2397,9 +2396,7 @@ export function AppWorkbench() {
       setPolicy(
         isValidPolicy(prefs.permissionPolicy) ? prefs.permissionPolicy : "ask",
       );
-      if (isValidPrefsScope(prefs.scope)) {
-        setPrefsScope(prefs.scope);
-      }
+      if (isValidPrefsScope(prefs.scope)) setPrefsScope(prefs.scope);
     },
     [sessionProviderChip],
   );
@@ -6583,6 +6580,7 @@ export function AppWorkbench() {
             query: q,
             mode: "name",
             limit: 40,
+            includeDirs: true,
           });
           if (gen !== atSearchGenRef.current) return;
           if (res.softFail) {
@@ -6590,15 +6588,7 @@ export function AppWorkbench() {
             setAtEntries([]);
           } else {
             setAtSoftFail(null);
-            const hits: ComposerAtFileEntry[] = rankAtFileHits(
-              (res.hits ?? []).map((h) => ({
-                path: h.path,
-                name: h.name,
-                relativePath: h.relativePath,
-                mtimeMs: h.mtimeMs,
-              })),
-              q,
-            );
+            const hits = rankAtFileHits(toAtFileHits(res.hits ?? []), q);
             setAtEntries(hits);
           }
         } catch (e) {

@@ -2061,6 +2061,7 @@ impl SessionManager {
             AcpEvent::Stderr { .. } => "stderr",
             AcpEvent::HookActivity { .. } => "hook_activity",
             AcpEvent::GoalUpdated { .. } => "goal_updated",
+            AcpEvent::Subagent(_) => "subagent",
         }
     }
 
@@ -2165,7 +2166,13 @@ async fn apply_connected_model(
     journal_has_history: bool,
 ) {
     let staged = if !resumed && !journal_has_history {
-        *mgr.pending_context_window.lock()
+        (*mgr.pending_context_window.lock()).or_else(|| {
+            crate::models_catalog::list_available_models()
+                .models
+                .iter()
+                .find(|model| model.id == session_model)
+                .and_then(crate::models_catalog::app_default_context_window)
+        })
     } else {
         None
     };

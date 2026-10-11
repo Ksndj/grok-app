@@ -17,11 +17,19 @@ See `docs/llm-wiki/release.md`.
 - Nightly signed installers are published from main. Rolling `nightly` prerelease; GitHub latest stays on `v*` tags.
 - Official models can use another context length when the model offers more than one.
 - The usage chip can show the CLI's own context breakdown.
+- The Tasks panel lists live subagent runs, with the counters and output the CLI reports.
+- New official chats start at 500k when the model offers that size.
+- The composer chip shows the pull request for the branch on screen.
+- A pull request update wakes that chat once.
 
 **中文 · 新增**
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
 - 官方模型如果提供多种上下文长度，可以改用其中一种。
 - 用量条可以显示 CLI 自己算出的上下文明细。
+- 任务面板会列出正在运行的子代理，并显示 CLI 上报的计数与输出。
+- 新的官方对话在模型提供 500k 时，从 500k 开始。
+- 输入框芯片显示当前分支对应的拉取请求。
+- 拉取请求有更新时，对应的对话会被唤醒一次。
 
 ### Fixed
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
@@ -36,6 +44,9 @@ See `docs/llm-wiki/release.md`.
 - The same Windows file stays one attachment when only the slashes differ.
 - A non-text file token no longer blanks the whole chat.
 - A finished tool turn no longer looks like the app restarted.
+- Changing the context window no longer puts a new chat back on the default model.
+- A file reference can point at a directory, not only a file.
+- Rows on screen stay drawn while the chat scrolls.
 
 **中文 · 修复**
 - 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
@@ -50,6 +61,9 @@ See `docs/llm-wiki/release.md`.
 - 同一个 Windows 文件只是斜杠不同时，仍然只算一个附件。
 - 文件路径如果不是文字，整段对话不再因此变空白。
 - 已经做完的工具回合，切换对话时不再显示成应用重启。
+- 改上下文窗口时，新开的对话不会再回到默认模型。
+- 文件引用可以指向目录，而不只是文件。
+- 滑动对话时，屏幕上的行保持已绘制。
 
 ## [0.2.39] - 2026-10-06
 
