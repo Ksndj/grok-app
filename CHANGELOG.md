@@ -21,11 +21,13 @@ See `docs/llm-wiki/release.md`.
 
 
 ### Fixed
+- Retry on a dropped connection continues that chat. The button sends a continue prompt once the agent is gone. (#1324)
 - Chats start again when the sandbox is on. The private agent home was handing the sandbox a linked hooks folder, which it refuses. (#1323)
 - A new chat sees skills added or removed while the app stays open. The slash list reloads with that chat, and a startup agent is not reused for it. (#1328)
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
 
 **中文 · 修复**
+- 连接中断后，点错误上的重试会接着聊。按钮向模型发送继续，把未做完的步骤接上。（#1324）
 - 打开沙箱后，对话可以重新开始。每个对话单独的代理目录以前把 hooks 做成了链接，沙箱会拒绝启动。（#1323）
 - 应用开着的时候增删技能，新建对话能看到这次变化。斜杠列表会跟着这条对话重新加载，启动时预热的代理也不会再被这条新对话沿用。（#1328）
 - 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
