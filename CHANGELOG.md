@@ -19,18 +19,45 @@ See `docs/llm-wiki/release.md`.
 **中文 · 新增**
 - 推送到 main 会自动打签名安装包。发到滚动的 nightly 预发布；GitHub latest 仍是正式 v* 版。
 
+### Fixed
+- Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
+
+**中文 · 修复**
+- 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+
+## [0.2.41] - 2026-10-14
+
+> **Highlight:** One chat can follow several pull requests, and an update continues it.
+>
+> **中文 · 亮点：** 一个对话可以盯上多条拉取请求，有更新时会自己接着写。
+
+### Added
+- A chat can watch several open pull requests from the branch menu. The chip shows how many are watched. (#1325)
+- The agent can watch and unwatch those pull requests itself. (#1327)
+- A pull-request update shows up as an automatic follow-up in the chat. (#1330)
+
+**中文 · 新增**
+- 一个对话可以从分支菜单盯上仓库里打开的多条拉取请求。芯片会写出正在盯的数量。（#1325）
+- 代理可以自己盯上或取消盯一条拉取请求。（#1327）
+- 拉取请求有更新时，这一轮会记成自动续写。（#1330）
 
 ### Fixed
 - Retry on a dropped connection continues that chat. The button sends a continue prompt once the agent is gone. (#1324)
 - Chats start again when the sandbox is on. The private agent home was handing the sandbox a linked hooks folder, which it refuses. (#1323)
 - A new chat sees skills added or removed while the app stays open. The slash list reloads with that chat, and a startup agent is not reused for it. (#1328)
-- Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
+- A timed-out follow-up no longer marks your next message as automatic. That mark is cleared when the send never went out.
+- The branch menu retries the pull-request list after a failed read or a project switch. Opening the menu asks again.
+- A pull-request watch shows a poll failure and clears it when the next read works. The hint updates when the error changes or goes away.
+- A reused startup agent still gets pull-request watch tools. A chat can watch pull requests on a process that started before the chat existed.
 
 **中文 · 修复**
 - 连接中断后，点错误上的重试会接着聊。按钮向模型发送继续，把未做完的步骤接上。（#1324）
 - 打开沙箱后，对话可以重新开始。每个对话单独的代理目录以前把 hooks 做成了链接，沙箱会拒绝启动。（#1323）
 - 应用开着的时候增删技能，新建对话能看到这次变化。斜杠列表会跟着这条对话重新加载，启动时预热的代理也不会再被这条新对话沿用。（#1328）
-- 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+- 超时未发出的自动续写，不会再把你的下一条消息标成自动。那次发送没有写入记录时，下一条仍算你自己发的。
+- 分支菜单在读取失败或切换项目后，会重新读取拉取请求。再次打开菜单会再问一次。
+- 拉取请求监视会显示轮询失败，下次读成功后会清掉。错误变了或消失时，提示会跟着更新。
+- 复用启动时预热的代理，仍然带上拉取请求监视工具。对话用上一个更早启动的进程时，也可以自己盯拉取请求。
 
 ## [0.2.40] - 2026-10-11
 
