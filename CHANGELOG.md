@@ -21,9 +21,61 @@ See `docs/llm-wiki/release.md`.
 
 ### Fixed
 - Clicking Changes in Environment info opens the Review side panel. Branch, commit/push, and PR rows no longer just close the menu.
+- Small icons in macOS System Settings no longer show colored stripes.
+- Follow System stays Simplified Chinese when that is the preferred language.
+- A trusted workspace no longer blocks sandboxed chats from starting.
+- Chats open again on macOS 12. Markdown no longer uses a pattern Monterey rejects.
+- JSON code blocks in a reply stay visible.
+- Composer markdown no longer stalls on a crafted link reference.
+- A chat connects when leader mode is on but no leader is running.
 
 **中文 · 修复**
 - 点环境信息里的「变更」会打开审阅侧栏。分支、提交或推送、PR 不再一点菜单就关掉。
+- macOS 系统设置里的小图标不再出现彩色横纹。
+- 跟随系统时，首选简体中文就会显示简体。
+- 信任过工作区之后，沙箱对话可以正常启动。
+- macOS 12 上的对话可以重新打开。Markdown 不再使用旧系统会拒绝的正则。
+- 回复里的 JSON 代码块会照常显示。
+- 输入框里的 Markdown 不再会因一段特制链接引用而卡住。
+- 开了 leader、但本机没有 leader 时，对话也能连上。
+
+## [0.2.42] - 2026-10-19
+
+> **Highlight:** The desktop pet can dictate, send, and stop a chat.
+>
+> **中文 · 亮点：** 桌面宠物可以听写、发送，以及停掉对话。
+
+### Added
+- The desktop pet can dictate, send a prompt, and stop the chat.
+- Turkish is now an interface language.
+
+**中文 · 新增**
+- 桌面宠物可以听写、发送提示，以及停掉对话。
+- 界面语言现在可以选择土耳其语。
+
+### Fixed
+- The desktop pet stays where you left it when the app opens again.
+- A streaming reply stays at the bottom instead of bouncing.
+- Opening the desktop pet on Windows no longer freezes the app.
+- A stalled chat connect can be taken over once it expires.
+- Pinyin candidates stay at the caret after selecting text or switching windows.
+- Reopening a full side pane no longer stretches the window downward.
+- Sandbox can start a chat again. The sealed home copies its config and bundled files instead of linking them.
+- A custom channel stays on its own server when a model allowlist is already set. A refusal is shown instead of silently using another provider.
+- A WSL chat starts the Linux grok directly. The open project is reached through its distro path.
+- The WSL agent home stays inside Linux. Only the login file is shared from Windows.
+
+**中文 · 修复**
+- 下次打开应用时，桌面宠物还在上次放下的地方。
+- 正在输出的回复会停在底部，不再上下跳动。
+- 在 Windows 上打开桌面宠物，不再把整个应用卡住。
+- 卡住的连接过期后，可以被新的连接接过去。
+- 选中聊天文字或切换窗口后，拼音候选框仍在输入光标旁边。
+- 右栏拉满后再打开，窗口不再往下变高。
+- 沙箱又能开始对话了。密封目录改为复制配置和内置文件，不再做链接。
+- 已经写了模型白名单时，自定义通道仍走自己的服务器。被拒绝时会直接提示，不再静默换到别的通道。
+- WSL 对话会直接启动 Linux 里的 grok。打开的项目会走发行版里的对应路径。
+- WSL 的代理目录留在 Linux 里。只有登录文件从 Windows 共享过来。
 
 ## [0.2.41] - 2026-10-14
 
