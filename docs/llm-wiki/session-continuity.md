@@ -54,6 +54,8 @@ stream / tool / journal side effects:
 - no `session://tool` storms  
 - **no journal rewrites** (`messages.json` stays the UI source of truth)
 
+**A live workflow result is not load replay.** When a background workflow finishes, Grok Build starts its own turn on the same ACP connection (`promptId` prefix `workflow-completed-`). There is no Host `session/prompt` for that turn. If this chat's own `session/load` is not still pending, the Host adopts it: a prompt is in flight, a quiet `auto_wake` line is journaled, the chunks apply, and `turn_completed` finishes the turn. Prompt ids seen during that session's load stay dropped. A load of another chat does not drop them. Switching away keeps the visit bit, and a parked chat is brought back only for the workflow start (or an end that is already open). Stream and tool chunks from a workflow turn that is not the armed one are dropped.
+
 **Human gates are not load-replay.** Grok Build may re-issue
 `_x.ai/exit_plan_mode` after resume (`RestorePlanApproval` /
 `awaiting_plan_approval`) with **no** prompt in flight. Host accepts Plan
@@ -236,7 +238,7 @@ When Settings flips `session_data_mode` independent↔shared, Host calls `recycl
 
 **New chat / disconnect:** `newChat` must **not** call `sessionDisconnect` (that killed the live ACP and aborted turns when users hit 新建会话 right after send). Host `disconnect` demotes busy → background and parks Ready instead of killing. In-flight `executeSend` still runs `sessionSend` after `ensureConnected` even if the user already switched the draft UI.
 
-**Send queue (per viewed session):** Follow-up enqueue only when *this* chat’s FSM is busy (`streaming` / `connecting` state). The process-global UI `connecting` flag (any `ensureConnected`) must **not** gate enqueue — that re-parked SuperGrok new-chat sends into “本会话队列” while another connect was in flight. Host mid-turn on another chat must **not** enqueue either — that send demotes the foreign turn and spawns concurrent work. Flush claims only the *viewed* session key (never fall back to live host id). Hold flush only when the claimed session is the busy live one.
+**Send queue (per session):** Follow-up enqueue only when *this* chat’s FSM is busy (`streaming`). The process-global UI `connecting` flag (any `ensureConnected`) must **not** gate enqueue — that re-parked SuperGrok new-chat sends into “本会话队列” while another connect was in flight. Host mid-turn on another chat must **not** enqueue a composer send either — that send demotes the foreign turn and spawns concurrent work. Each session keeps its own queue. Auto-flush runs for every session that is `ready` / `idle` with a composer item at the head, including chats that are not on screen. Flush claims that session’s own key (never the live host id). A background flush calls `session_send` for that id and does **not** `ensureConnected` (connect would adopt the workbench view). External (`session://send_queue`) items stay Host-drained. Hold flush only when *that* session is the busy live one. One session’s send failure holds only that key. Deleted sessions and a `disconnected` row drop their queue.
 
 ### 4b. Session-scoped Host commands (no live-slot guessing)
 

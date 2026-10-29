@@ -539,6 +539,7 @@ impl SessionManager {
             // takes `inner` (the old inline if-let held both — ABBA deadlock
             // against try_park_live's inner→background order).
             if self.promote_background_to_live(&meta.id) {
+                self.emit_live_pending_stream(&app);
                 let snap = self.snapshot();
                 Self::emit_state(&app, &snap);
                 tracing::info!("acp promoted background session to live sid={}", meta.id);
@@ -1317,6 +1318,8 @@ impl SessionManager {
             } else {
                 meta.plugin_dirs.clone()
             },
+            // The rule is read when session/new is built, not copied here.
+            use_app_director_rules: true,
             extra_rules: if ssh_alias.is_some() {
                 meta.extra_rules
                     .as_ref()
@@ -1636,8 +1639,8 @@ impl SessionManager {
                 }
                 // Mirror the unpark path — apply the resolved model via
                 // session/set_model after session/new. Generic relays send the
-                // section id (same as spawn). Official and proxy relays send the
-                // catalog id, which spawn may have resolved differently (#1000).
+                // per-model section when one exists (same id as spawn). Official
+                // and proxy relays send the catalog id (#1000, #1394).
                 let session_model = connect_set_model_argument(
                     ssh_alias.is_some(),
                     &route,
@@ -1935,6 +1938,8 @@ impl SessionManager {
             product_mode: Some(prefs.mode.clone()),
             sandbox_profile: Some(effective_sandbox.clone()),
             extra_rules: crate::official_aux::merge_extra_rules(None),
+            // Director stays on this default. session/new reads the setting
+            // later, so toggling it does not require a new process.
             ..Default::default()
         };
         let scanned_at = chrono::Utc::now();
@@ -2074,6 +2079,8 @@ impl SessionManager {
     }
 
     /// Ownerless prewarm never receives these process-level flags — force cold spawn.
+    /// Director mode is not one of them: `session/new` reads the setting when
+    /// the request is built, including on a process that is already warm.
     pub(super) fn session_needs_cold_spawn_for_flags(
         folder_trust: bool,
         extra_rules: Option<&str>,
@@ -2125,6 +2132,8 @@ impl SessionManager {
             AcpEvent::HookActivity { .. } => "hook_activity",
             AcpEvent::GoalUpdated { .. } => "goal_updated",
             AcpEvent::Subagent(_) => "subagent",
+            AcpEvent::WorkflowFollowup(_) => "workflow_followup",
+            AcpEvent::WorkflowScoped { .. } => "workflow_scoped",
         }
     }
 
@@ -2141,6 +2150,8 @@ impl SessionManager {
                 | AcpEvent::AskUserQuestion { .. }
                 | AcpEvent::Error { .. }
                 | AcpEvent::ProcessExited { .. }
+                | AcpEvent::WorkflowFollowup(_)
+                | AcpEvent::WorkflowScoped { .. }
         )
     }
 
@@ -2570,6 +2581,7 @@ mod connect_preserve_tests {
                 workspace_root_snapshot: None,
                 workspace_capability: None,
                 provider_id: None,
+                source: None,
             },
             fsm,
             backend: "grok_agent_stdio".into(),
@@ -2671,6 +2683,7 @@ mod connect_preserve_tests {
                 workspace_root_snapshot: None,
                 workspace_capability: None,
                 provider_id: None,
+                source: None,
             },
             fsm,
             backend: "grok_agent_stdio".into(),
